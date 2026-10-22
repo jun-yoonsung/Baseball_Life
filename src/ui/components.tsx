@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from 'react';
+import { PitchDonut, PlayerAvatar, SprayChart, TeamEmblem, TrophyIcon } from './graphics';
 import {
   batRates,
   fmtAvg,
@@ -10,7 +11,6 @@ import {
   RATING_NAME,
   sumBat,
   sumPit,
-  TEAM_MAP,
   teamName,
   type Career,
   type RatingKey,
@@ -95,10 +95,9 @@ export function Meter({ label, value, suffix }: { label: string; value: number; 
 }
 
 export function TeamLine({ teamId, sub }: { teamId: string | null; sub?: ReactNode }) {
-  const color = teamId ? TEAM_MAP[teamId]?.color ?? '#888' : '#888';
   return (
     <div className="teamline">
-      <span className="teamdot" style={{ background: color }} />
+      <TeamEmblem teamId={teamId} size={20} />
       <span>{teamName(teamId)}</span>
       {sub}
     </div>
@@ -302,10 +301,14 @@ export function lineSummary(l: SeasonLine): string {
 
 export function SeasonReport({ rec, career, onClose }: { rec: SeasonRecord; career: Career; onClose: () => void }) {
   const diff = rec.ovrEnd - rec.ovrStart;
+  const main = [...rec.lines].sort((a, b) => (b.bat?.PA ?? 0) + (b.pit?.outs ?? 0) - ((a.bat?.PA ?? 0) + (a.pit?.outs ?? 0)))[0];
+  const showBat = !!main?.bat && main.bat.PA >= 30;
+  const showPit = !!main?.pit && main.pit.outs >= 15;
   return (
     <Modal onClose={onClose}>
-      <div className="spread">
-        <h2 style={{ margin: 0 }}>
+      <div className="report-head">
+        <PlayerAvatar c={career} size={64} ring={rec.awards.some((a) => a.key === 'MVP') ? 'var(--gold)' : undefined} />
+        <h2 style={{ margin: 0, flex: 1 }}>
           {rec.year} 시즌 결산 <span className="muted small">만 {rec.age}세</span>
         </h2>
         <span className={`badge ${diff > 0 ? 'green' : diff < 0 ? 'red' : ''}`}>
@@ -320,9 +323,25 @@ export function SeasonReport({ rec, career, onClose }: { rec: SeasonRecord; care
         <div style={{ marginBottom: 12 }}>
           {rec.awards.map((a, i) => (
             <span key={i} className={`award-chip ${a.key === 'MVP' ? 'mvp' : ''}`}>
-              🏆 {a.label}
+              <TrophyIcon mvp={a.key === 'MVP'} /> {a.label}
             </span>
           ))}
+        </div>
+      )}
+      {(showBat || showPit) && (
+        <div className={`grid ${showBat && showPit ? 'grid-2' : ''}`} style={{ marginBottom: 12 }}>
+          {showBat && (
+            <div>
+              <div className="lbl-sm">타구 분포 · {LEAGUES[main.level].short}</div>
+              <SprayChart bat={main.bat!} seed={rec.year * 31 + rec.age} bats={career.bats} />
+            </div>
+          )}
+          {showPit && (
+            <div>
+              <div className="lbl-sm">상대 타자 처리 · {LEAGUES[main.level].short}</div>
+              <PitchDonut pit={main.pit!} />
+            </div>
+          )}
         </div>
       )}
       <div className="kpis" style={{ marginBottom: 12 }}>

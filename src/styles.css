@@ -14,6 +14,8 @@
   --info: #2c6fb7;
   --big: #8a5a00;
   --bar: #2f8f5b;
+  --field: #4caf74;
+  --dirt: #c9965f;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 4px 16px rgba(0, 0, 0, 0.05);
   --radius: 14px;
   color-scheme: light;
@@ -36,6 +38,8 @@
     --info: #6aa9f0;
     --big: #f0c060;
     --bar: #3fae72;
+    --field: #2f7d52;
+    --dirt: #8a6440;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     color-scheme: dark;
   }
@@ -57,6 +61,8 @@
   --info: #6aa9f0;
   --big: #f0c060;
   --bar: #3fae72;
+  --field: #2f7d52;
+  --dirt: #8a6440;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
   color-scheme: dark;
 }
@@ -191,6 +197,10 @@ button:disabled {
   margin-top: 14px;
 }
 
+.grid > .card + .card {
+  margin-top: 0;
+}
+
 .card h2,
 .card h3 {
   margin: 0 0 12px;
@@ -307,23 +317,34 @@ h3 {
 }
 
 .hero {
-  padding: 36px 24px;
   border-radius: 20px;
-  background: linear-gradient(135deg, #14532d, #1f6f43 55%, #2f8f5b);
+  background: #0f2a2a;
   color: #fff;
-  position: relative;
   overflow: hidden;
+  display: grid;
+}
+
+.hero .stadium {
+  display: block;
+  width: 100%;
+  height: clamp(180px, 38vw, 400px);
+}
+
+.hero-body {
+  padding: 22px 24px 26px;
+  background: linear-gradient(180deg, #2f8f5b, #1f6f43);
 }
 
 .hero h1 {
-  font-size: 34px;
+  font-size: 32px;
   margin: 0 0 8px;
+  text-wrap: balance;
 }
 
 .hero p {
   margin: 0 0 18px;
-  opacity: 0.92;
-  max-width: 560px;
+  opacity: 0.94;
+  max-width: 600px;
 }
 
 .hero .btn {
@@ -337,16 +358,31 @@ h3 {
 }
 
 .hero .btn:not(.primary) {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.12);
   color: #fff;
 }
 
-.hero .diamond-bg {
-  position: absolute;
-  right: -40px;
-  bottom: -60px;
-  width: 280px;
-  opacity: 0.18;
+.ball-arc {
+  stroke-dashoffset: 0;
+  animation: arc 3.2s ease-out infinite;
+}
+
+@keyframes arc {
+  0% {
+    stroke-opacity: 0;
+  }
+  30% {
+    stroke-opacity: 0.6;
+  }
+  100% {
+    stroke-opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ball-arc {
+    animation: none;
+  }
 }
 
 .feature {
@@ -832,4 +868,271 @@ table.stats tr.minor td {
   font-weight: 700;
   font-size: 14px;
   z-index: 60;
+}
+
+/* ---------- 그래픽 ---------- */
+.emblem {
+  flex-shrink: 0;
+  display: block;
+}
+
+.avatar {
+  display: block;
+  flex-shrink: 0;
+}
+
+.avatar-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ovr-chip {
+  position: absolute;
+  right: -6px;
+  bottom: -4px;
+  min-width: 44px;
+  padding: 3px 6px 2px;
+  border-radius: 10px;
+  background: var(--primary);
+  color: var(--primary-ink);
+  border: 2px solid var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.ovr-chip b {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ovr-chip span {
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.ovr-chip.small-chip {
+  min-width: 36px;
+  right: -8px;
+}
+
+.ovr-chip.small-chip b {
+  font-size: 16px;
+}
+
+.cand-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.radar {
+  display: block;
+  margin: 0 auto;
+}
+
+.radar-shape {
+  transition: all 0.4s ease;
+}
+
+.radar-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+
+.decision-head {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.decision-art {
+  flex-shrink: 0;
+  background: var(--surface-2);
+  border-radius: 14px;
+  padding: 4px;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.lbl-sm {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.chart-fig {
+  margin: 0 auto;
+  max-width: 320px;
+}
+
+.chart-wide {
+  display: block;
+  max-width: 680px;
+  margin: 0 auto;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  justify-content: center;
+}
+
+.legend i {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 4px;
+  vertical-align: 0;
+}
+
+.award-chip .trophy {
+  flex-shrink: 0;
+}
+
+.scoreboard {
+  width: 100%;
+  max-width: 420px;
+  background: #0d1218;
+  color: #e9f1ec;
+  border-radius: 18px;
+  padding: 18px;
+  border: 3px solid #2c3d4a;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45), inset 0 0 0 2px #121b23;
+  display: grid;
+  gap: 14px;
+}
+
+.sb-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sb-year {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #ffcf4a;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-size: 13px;
+}
+
+.sb-team {
+  font-weight: 800;
+  font-size: 18px;
+}
+
+.sb-progress {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: #1d2a33;
+}
+
+.sb-progress > div {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2f8f5b, #7ee0a1);
+}
+
+.sb-ball {
+  position: absolute;
+  top: -5px;
+  width: 20px;
+  height: 20px;
+}
+
+.sb-games {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  color: #9fb3a8;
+}
+
+.sb-flash {
+  color: #ffcf4a;
+  font-weight: 800;
+}
+
+.sb-cells {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 8px;
+}
+
+.sb-cells > div {
+  background: #111a21;
+  border: 1px solid #22313c;
+  border-radius: 10px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.sb-cells span {
+  font-size: 11px;
+  color: #9fb3a8;
+  font-weight: 700;
+}
+
+.sb-cells b {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 24px;
+  color: #ffcf4a;
+  font-variant-numeric: tabular-nums;
+}
+
+.scoreboard .btn {
+  background: #1d2a33;
+  color: #e9f1ec;
+  border-color: #2c3d4a;
+}
+
+.plaque {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 14px 0;
+  padding: 18px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #8a6a3a, #b08d57 45%, #7a5b2e);
+  color: #fdf3dc;
+  box-shadow: inset 0 0 0 2px rgba(255, 240, 210, 0.35), inset 0 0 0 6px rgba(0, 0, 0, 0.12);
+}
+
+.plaque > div {
+  min-width: 0;
+  flex: 1 1 220px;
+}
+
+.plaque-grade {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  opacity: 0.85;
+}
+
+.plaque-name {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 26px;
+  font-weight: 700;
+  margin: 2px 0 6px;
+}
+
+.plaque-line {
+  font-size: 13px;
+  opacity: 0.95;
 }

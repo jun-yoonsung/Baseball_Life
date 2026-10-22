@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   advanceSeason,
   BAT_KEYS,
@@ -26,6 +26,7 @@ import {
   type RatingKey,
 } from '../engine';
 import { BattingTable, ConfirmButton, Meter, PitchingTable, PotentialBadge, RatingBar, SeasonReport, TeamLine } from '../ui/components';
+import { CareerTimeline, DecisionArt, HallPlaque, PlayerAvatar, Radar, SeasonSim, TrophyIcon, WarBars } from '../ui/graphics';
 
 type Tab = 'stats' | 'ratings' | 'awards' | 'log' | 'contract';
 
@@ -33,18 +34,23 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
   const [tab, setTab] = useState<Tab>('stats');
   const [report, setReport] = useState(false);
   const [showMinor, setShowMinor] = useState(true);
+  const [sim, setSim] = useState(false);
+  const simDone = useCallback(() => {
+    setSim(false);
+    setReport(true);
+  }, []);
 
   if (!career) {
     return (
       <div className="card" style={{ textAlign: 'center', padding: 40 }}>
         <h2>진행 중인 커리어가 없습니다</h2>
-        <p className="muted">새 선수를 만들거나, 설정에서 저장 파일을 가져오세요.</p>
+        <p className="muted">새 선수를 만들거나, 저장 화면에서 저장 파일을 불러오세요.</p>
         <div className="row" style={{ justifyContent: 'center' }}>
           <a className="btn primary" href="#new">
             선수 만들기
           </a>
           <a className="btn" href="#save">
-            저장 파일 가져오기
+            저장 파일 불러오기
           </a>
         </div>
       </div>
@@ -60,7 +66,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
     try {
       const next = advanceSeason(c);
       setCareer(next);
-      setReport(true);
+      setSim(true);
     } catch (e) {
       notify((e as Error).message);
     }
@@ -81,9 +87,12 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
       <section className="card">
         <div className="spread" style={{ alignItems: 'flex-start' }}>
           <div className="profile">
-            <div className="ovr">
-              <b>{ovr}</b>
-              <span>OVR</span>
+            <div className="avatar-wrap">
+              <PlayerAvatar c={c} size={104} />
+              <div className="ovr-chip">
+                <b>{ovr}</b>
+                <span>OVR</span>
+              </div>
             </div>
             <div>
               <h1>
@@ -135,11 +144,16 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
         <RetiredCard c={c} />
       ) : pending ? (
         <section className="card decision">
-          <div className="spread">
-            <h2 style={{ margin: 0 }}>{pending.title}</h2>
-            {c.pending.length > 1 && <span className="badge">남은 결정 {c.pending.length}</span>}
+          <div className="decision-head">
+            <DecisionArt kind={pending.kind} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="spread">
+                <h2 style={{ margin: 0 }}>{pending.title}</h2>
+                {c.pending.length > 1 && <span className="badge">남은 결정 {c.pending.length}</span>}
+              </div>
+              <p style={{ margin: '6px 0 0' }}>{pending.body}</p>
+            </div>
           </div>
-          <p style={{ margin: '8px 0 0' }}>{pending.body}</p>
           <div className="opts">
             {pending.options.map((o) => (
               <button key={o.id} className="opt" disabled={o.disabled} onClick={() => decide(pending, o.id)}>
@@ -222,6 +236,10 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
 
       {tab === 'stats' && (
         <section className="card">
+          <h3 style={{ marginTop: 0 }}>커리어 타임라인</h3>
+          <CareerTimeline c={c} />
+          <h3>시즌별 1군 WAR</h3>
+          <WarBars seasons={c.seasons} mvpYears={new Set(c.awards.filter((a) => a.key === 'MVP').map((a) => a.year))} />
           <div className="spread">
             <h3 style={{ margin: 0 }}>시즌별 기록</h3>
             <label className="row small">
@@ -283,9 +301,13 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
               <h3>
                 타자 능력치 <span className="muted small">({batOvr(c.bat, c.batPos)} OVR)</span>
               </h3>
-              {BAT_KEYS.map((k) => (
-                <RatingBar key={k} k={k} v={c.bat[k]} />
-              ))}
+              <Radar items={BAT_KEYS.map((k) => ({ label: RATING_NAME[k], value: c.bat[k] }))} color={'var(--primary)'} />
+              <details className="small">
+                <summary className="muted">수치 막대로 보기</summary>
+                {BAT_KEYS.map((k) => (
+                  <RatingBar key={k} k={k} v={c.bat[k]} />
+                ))}
+              </details>
             </div>
           )}
           {c.role !== 'batter' && (
@@ -293,9 +315,13 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
               <h3>
                 투수 능력치 <span className="muted small">({pitOvr(c.pit, c.pitPos)} OVR)</span>
               </h3>
-              {PIT_KEYS.map((k) => (
-                <RatingBar key={k} k={k} v={c.pit[k]} />
-              ))}
+              <Radar items={PIT_KEYS.map((k) => ({ label: RATING_NAME[k], value: c.pit[k] }))} color={'var(--info)'} />
+              <details className="small">
+                <summary className="muted">수치 막대로 보기</summary>
+                {PIT_KEYS.map((k) => (
+                  <RatingBar key={k} k={k} v={c.pit[k]} />
+                ))}
+              </details>
             </div>
           )}
           <div className="card">
@@ -316,7 +342,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
                 .filter((a) => a.year === y)
                 .map((a, i) => (
                   <span key={i} className={`award-chip ${a.key === 'MVP' ? 'mvp' : ''}`}>
-                    🏆 {a.label}
+                    <TrophyIcon mvp={a.key === 'MVP'} /> {a.label}
                   </span>
                 ))}
             </div>
@@ -356,6 +382,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
 
       {tab === 'contract' && <ContractTab c={c} />}
 
+      {sim && c.lastReport && <SeasonSim rec={c.lastReport} c={c} onDone={simDone} />}
       {report && c.lastReport && <SeasonReport rec={c.lastReport} career={c} onClose={() => setReport(false)} />}
     </div>
   );
@@ -527,6 +554,17 @@ function RetiredCard({ c }: { c: Career }) {
           {r.retiredNumber && <span className="badge gold">영구결번 #{c.number} ({r.retiredNumber})</span>}
         </div>
       </div>
+      <HallPlaque
+        c={c}
+        grade={r.hallOfFame ? '명예의 전당 헌액' : r.grade}
+        lines={[
+          `${r.teams.join(' · ')}`,
+          [r.bat && r.bat.PA > 0 ? `타율 ${r.bat.AVG.toFixed(3).replace(/^0/, '')} ${r.bat.HR}홈런 ${r.bat.H}안타` : '', r.pit && r.pit.outs > 0 ? `${r.pit.W}승 ${r.pit.SV}세이브 평균자책점 ${r.pit.ERA.toFixed(2)}` : '']
+            .filter(Boolean)
+            .join(' / ') || '1군 기록 없음',
+          `MVP ${r.mvp}회 · 개인상 ${r.awardsCount}회 · 통산 WAR ${r.war.toFixed(1)}`,
+        ]}
+      />
       <p className="muted">
         {r.seasons}시즌 (1군 {r.majorSeasons}시즌) · 만 {r.age}세 은퇴 · {r.teams.join(' → ')}
       </p>

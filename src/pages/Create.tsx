@@ -10,6 +10,7 @@ import {
   PIT_POS,
   POS_NAME,
   randomSeed,
+  RATING_NAME,
   RATING_SUM,
   startCareer,
   velocityKmh,
@@ -22,7 +23,8 @@ import {
   type PitPos,
   type Role,
 } from '../engine';
-import { ConfirmButton, PotentialBadge, RatingBar } from '../ui/components';
+import { ConfirmButton, PotentialBadge } from '../ui/components';
+import { PlayerAvatar, Radar } from '../ui/graphics';
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
@@ -158,12 +160,15 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
         <div className="grid grid-3">
           {cands.map((c) => (
             <button key={c.id} className={`cand ${picked === c.id ? 'on' : ''}`} onClick={() => setPicked(c.id)}>
-              <div className="spread">
+              <div className="cand-head">
+                <div className="avatar-wrap">
+                  <PlayerAvatar c={{ teamId: null, number: 0, role, throws, bats, age: 18 }} size={64} />
+                  <div className="ovr-chip small-chip">
+                    <b>{c.ovr}</b>
+                    <span>OVR</span>
+                  </div>
+                </div>
                 <b style={{ fontSize: 17 }}>{c.style}</b>
-                <span className="ovr" style={{ width: 52, height: 52, borderRadius: 12 }}>
-                  <b style={{ fontSize: 22 }}>{c.ovr}</b>
-                  <span>OVR</span>
-                </span>
               </div>
               <span className="muted small">{c.styleDesc}</span>
               <div className="row">
@@ -174,10 +179,9 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
                   </span>
                 ))}
               </div>
-              <div>
-                {role !== 'pitcher' && BAT_KEYS.map((k) => <RatingBar key={k} k={k} v={c.bat[k]} />)}
-                {role === 'twoWay' && <hr style={{ border: 0, borderTop: '1px solid var(--border)' }} />}
-                {role !== 'batter' && PIT_KEYS.map((k) => <RatingBar key={k} k={k} v={c.pit[k]} />)}
+              <div className={role === 'twoWay' ? 'radar-pair' : ''}>
+                {role !== 'pitcher' && <Radar items={BAT_KEYS.map((k) => ({ label: RATING_NAME[k], value: c.bat[k] }))} />}
+                {role !== 'batter' && <Radar items={PIT_KEYS.map((k) => ({ label: RATING_NAME[k], value: c.pit[k] }))} color="var(--info)" />}
               </div>
               {role !== 'batter' && <span className="muted small">최고 구속 {velocityKmh(c.pit.velocity)}km/h</span>}
             </button>

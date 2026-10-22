@@ -1,22 +1,6 @@
 import { currentLevelLabel, loadHistory, overall, roleLabel, type Career } from '../engine';
 import { TeamLine } from '../ui/components';
-
-export function Diamond({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 200 200" className={className} aria-hidden="true">
-      <path d="M100 20 180 100 100 180 20 100Z" fill="none" stroke="#fff" strokeWidth="6" />
-      {[
-        [100, 20],
-        [180, 100],
-        [100, 180],
-        [20, 100],
-      ].map(([x, y], i) => (
-        <rect key={i} x={x - 9} y={y - 9} width="18" height="18" fill="#fff" transform={`rotate(45 ${x} ${y})`} />
-      ))}
-      <circle cx="100" cy="100" r="12" fill="#fff" />
-    </svg>
-  );
-}
+import { PlayerAvatar, StadiumScene } from '../ui/graphics';
 
 const FEATURES = [
   ['⚾', '타석 단위 시뮬레이션', '능력치와 리그 수준에 따라 한 타석, 한 타자씩 결과를 계산합니다. 타율·OPS·평균자책점·WAR까지 그럴듯하게 쌓입니다.'],
@@ -33,7 +17,8 @@ export function Home({ career }: { career: Career | null }) {
   return (
     <div className="grid">
       <section className="hero">
-        <Diamond className="diamond-bg" />
+        <StadiumScene />
+        <div className="hero-body">
         <h1>나만의 야구 인생</h1>
         <p>
           고교 졸업반 유망주 한 명을 골라 드래프트, 2군, 1군 주전, FA 대박, 빅리그 도전, 명예의 전당까지. 선택과 운이 만드는 단 하나뿐인 야구 커리어를 키워 보세요.
@@ -57,12 +42,14 @@ export function Home({ career }: { career: Career | null }) {
             오늘의 랭킹
           </a>
         </div>
+        </div>
       </section>
 
       {active && career && (
         <section className="card">
           <div className="spread">
-            <div>
+            <PlayerAvatar c={career} size={72} />
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div className="muted small">진행 중인 커리어</div>
               <h2 style={{ margin: '2px 0' }}>{career.name}</h2>
               <TeamLine teamId={career.teamId} sub={<span className="badge">{currentLevelLabel(career)}</span>} />
