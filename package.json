@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "start": "node server/index.mjs"
+    "start": "node server/index.mjs",
+    "build:artifact": "vite build -c vite.artifact.config.ts && node scripts-artifact.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

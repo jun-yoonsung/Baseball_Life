@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { bestNine, POS_NAME, type RankingEntry } from '../engine';
-import { fetchRankings, lastDays, type RankingResult } from '../api';
+import { lastDays, watchRankings, type RankingResult } from '../api';
 
 const SLOT_XY: Record<string, [number, number]> = {
   CF: [200, 58],
@@ -47,14 +47,8 @@ export function RankingsPage() {
   const [data, setData] = useState<RankingResult | null>(null);
 
   useEffect(() => {
-    let alive = true;
     setData(null);
-    fetchRankings(date).then((d) => alive && setData(d));
-    const t = window.setInterval(() => fetchRankings(date).then((d) => alive && setData(d)), 60_000);
-    return () => {
-      alive = false;
-      window.clearInterval(t);
-    };
+    return watchRankings(date, setData);
   }, [date]);
 
   const entries = data?.entries ?? [];
@@ -73,7 +67,7 @@ export function RankingsPage() {
           </button>
         ))}
       </div>
-      {data?.source === 'local' && <div className="notice">⚠️ 랭킹 서버에 연결할 수 없어 이 기기에서 은퇴한 선수만 보여 줍니다.</div>}
+      {data?.source === 'local' && <div className="notice">공유 랭킹에 연결되지 않아 이 기기에서 은퇴한 선수만 보여 줍니다.</div>}
 
       <section className="card">
         <h2>오늘의 베스트 나인</h2>

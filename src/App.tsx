@@ -10,30 +10,51 @@ import { GuidePage } from './pages/Guide';
 import { AboutPage } from './pages/About';
 import { SettingsPage } from './pages/Settings';
 
-export type Route = 'home' | 'new' | 'career' | 'rankings' | 'guide' | 'about' | 'settings';
+export type Route = 'home' | 'new' | 'career' | 'rankings' | 'guide' | 'about' | 'save';
 
-function parseRoute(): Route {
-  const h = window.location.hash.replace(/^#\/?/, '');
-  const r = h.split('?')[0] as Route;
-  return ['new', 'career', 'rankings', 'guide', 'about', 'settings'].includes(r) ? r : 'home';
+const ROUTES: Route[] = ['new', 'career', 'rankings', 'guide', 'about', 'save'];
+
+function toRoute(hash: string): Route {
+  const r = hash.replace(/^#\/?/, '').split('?')[0] as Route;
+  return ROUTES.includes(r) ? r : 'home';
 }
 
+// 화면 전환은 앱 상태로 처리하고, 주소의 #토큰은 가능한 환경에서만 맞춰 둔다.
+const listeners = new Set<(r: Route) => void>();
 export function go(r: Route) {
-  window.location.hash = r === 'home' ? '/' : `/${r}`;
+  listeners.forEach((fn) => fn(r));
+  try {
+    history.replaceState(null, '', `#${r}`);
+  } catch {
+    /* 샌드박스에서는 주소를 바꿀 수 없다 */
+  }
 }
 
 export function App() {
-  const [route, setRoute] = useState<Route>(parseRoute);
+  const [route, setRoute] = useState<Route>(() => toRoute(window.location.hash));
   const [career, setCareerState] = useState<Career | null>(() => loadCareer());
   const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
-    const on = () => {
-      setRoute(parseRoute());
+    const set = (r: Route) => {
+      setRoute(r);
       window.scrollTo(0, 0);
     };
-    window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    const onClick = (e: MouseEvent) => {
+      const a = (e.target as HTMLElement).closest?.('a[href^="#"]');
+      if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey) return;
+      e.preventDefault();
+      go(toRoute(a.getAttribute('href') ?? ''));
+    };
+    const onHash = () => set(toRoute(window.location.hash));
+    listeners.add(set);
+    document.addEventListener('click', onClick);
+    window.addEventListener('hashchange', onHash);
+    return () => {
+      listeners.delete(set);
+      document.removeEventListener('click', onClick);
+      window.removeEventListener('hashchange', onHash);
+    };
   }, []);
 
   const setCareer = useCallback((c: Career | null) => {
@@ -54,20 +75,20 @@ export function App() {
     setCareer(done);
     if (!entry) return;
     addHistory(entry);
-    submitEntry(entry).then((ok) => notify(ok ? '오늘의 랭킹에 등록됐습니다!' : '서버에 연결할 수 없어 이 기기의 기록에만 저장했습니다.'));
+    submitEntry(entry).then((ok) => notify(ok ? '오늘의 랭킹에 등록됐습니다!' : '공유 랭킹에 저장하지 못해 이 기기의 기록에만 남겼습니다.'));
   }, [career, setCareer, notify]);
 
   const links: [Route, string][] = [
     ['career', '내 커리어'],
     ['rankings', '랭킹'],
     ['guide', '게임 가이드'],
-    ['settings', '설정'],
+    ['save', '저장'],
   ];
 
   return (
     <div className="app">
       <header className="topbar">
-        <a className="brand" href="#/">
+        <a className="brand" href="#home">
           <BallIcon className="ball" />
           <span>
             베이스볼 라이프
@@ -76,7 +97,7 @@ export function App() {
         </a>
         <nav className="nav">
           {links.map(([r, label]) => (
-            <a key={r} href={`#/${r}`} className={route === r ? 'active' : ''}>
+            <a key={r} href={`#${r}`} className={route === r ? 'active' : ''}>
               {label}
             </a>
           ))}
@@ -89,12 +110,12 @@ export function App() {
         {route === 'rankings' && <RankingsPage />}
         {route === 'guide' && <GuidePage />}
         {route === 'about' && <AboutPage />}
-        {route === 'settings' && <SettingsPage career={career} setCareer={setCareer} notify={notify} />}
+        {route === 'save' && <SettingsPage career={career} setCareer={setCareer} notify={notify} />}
       </main>
       <footer className="footer">
         <span>© 베이스볼 라이프 · 가상의 야구 커리어 시뮬레이션</span>
         <span>
-          <a href="#/about">서비스 소개</a> · <a href="#/guide">게임 가이드</a> · <a href="#/rankings">랭킹</a>
+          <a href="#about">서비스 소개</a> · <a href="#guide">게임 가이드</a> · <a href="#rankings">랭킹</a>
         </span>
         <span>등장하는 구단·리그·선수는 모두 가상이며 실존 단체와 무관합니다.</span>
       </footer>

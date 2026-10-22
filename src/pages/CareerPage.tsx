@@ -25,7 +25,7 @@ import {
   type Decision,
   type RatingKey,
 } from '../engine';
-import { BattingTable, Meter, PitchingTable, PotentialBadge, RatingBar, SeasonReport, TeamLine } from '../ui/components';
+import { BattingTable, ConfirmButton, Meter, PitchingTable, PotentialBadge, RatingBar, SeasonReport, TeamLine } from '../ui/components';
 
 type Tab = 'stats' | 'ratings' | 'awards' | 'log' | 'contract';
 
@@ -40,10 +40,10 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
         <h2>진행 중인 커리어가 없습니다</h2>
         <p className="muted">새 선수를 만들거나, 설정에서 저장 파일을 가져오세요.</p>
         <div className="row" style={{ justifyContent: 'center' }}>
-          <a className="btn primary" href="#/new">
+          <a className="btn primary" href="#new">
             선수 만들기
           </a>
-          <a className="btn" href="#/settings">
+          <a className="btn" href="#save">
             저장 파일 가져오기
           </a>
         </div>
@@ -68,9 +68,6 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
 
   const decide = (d: Decision, optId: string) => setCareer(resolveDecision(c, d.id, optId));
 
-  const retire = () => {
-    if (window.confirm('정말 은퇴할까요? 은퇴하면 커리어가 끝나고 랭킹에 등록됩니다.')) setCareer(retireNow(c));
-  };
 
   const focusOptions: [Career['training']['focus'], string][] = [
     ['balanced', '균형 훈련'],
@@ -190,9 +187,13 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
               ▶ {c.year}시즌 진행
             </button>
             {canRetire(c) && (
-              <button className="btn danger" onClick={retire}>
-                은퇴 선언
-              </button>
+              <ConfirmButton
+                className="btn danger"
+                label="은퇴 선언"
+                message="정말 은퇴할까요? 커리어가 끝나고 랭킹에 등록됩니다."
+                confirmLabel="은퇴한다"
+                onConfirm={() => setCareer(retireNow(c))}
+              />
             )}
           </div>
           {c.lastReport && (
@@ -561,10 +562,10 @@ function RetiredCard({ c }: { c: Career }) {
         {r.majorSeasons > 0 ? '1군 출전 기록이 있어 오늘의 랭킹에 자동 등록됩니다.' : '1군 출전 기록이 없어 랭킹에는 등록되지 않습니다.'}
       </p>
       <div className="row">
-        <a className="btn primary" href="#/new">
+        <a className="btn primary" href="#new">
           새 커리어 시작
         </a>
-        <a className="btn" href="#/rankings">
+        <a className="btn" href="#rankings">
           오늘의 랭킹 보기
         </a>
       </div>

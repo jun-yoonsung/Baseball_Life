@@ -41,19 +41,19 @@ export function Home({ career }: { career: Career | null }) {
         <div className="row">
           {active ? (
             <>
-              <a className="btn primary big" href="#/career">
+              <a className="btn primary big" href="#career">
                 이어서 하기
               </a>
-              <a className="btn big" href="#/new">
+              <a className="btn big" href="#new">
                 새 커리어
               </a>
             </>
           ) : (
-            <a className="btn primary big" href="#/new">
+            <a className="btn primary big" href="#new">
               선수 만들기
             </a>
           )}
-          <a className="btn big" href="#/rankings">
+          <a className="btn big" href="#rankings">
             오늘의 랭킹
           </a>
         </div>

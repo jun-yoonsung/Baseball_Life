@@ -22,7 +22,7 @@ import {
   type PitPos,
   type Role,
 } from '../engine';
-import { PotentialBadge, RatingBar } from '../ui/components';
+import { ConfirmButton, PotentialBadge, RatingBar } from '../ui/components';
 
 function Seg<T extends string>({ value, options, onChange }: { value: T; options: [T, string][]; onChange: (v: T) => void }) {
   return (
@@ -57,7 +57,6 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
 
   const start = () => {
     if (!chosen) return;
-    if (hasCareer && !window.confirm('진행 중인 커리어가 있습니다. 새 커리어를 시작하면 기존 커리어는 사라집니다. 계속할까요?')) return;
     onCreate(startCareer(createCareer(input, chosen)));
   };
 
@@ -187,9 +186,15 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
         <p className="muted small">스카우트 잠재력 평가는 추정치입니다. 실제 잠재력과 성장 유형(조기 완성형·대기만성형)은 숨겨져 있습니다.</p>
       </section>
 
-      <button className="btn primary big block" disabled={!chosen || !name.trim() || (throws === 'L' && !leftOk)} onClick={start}>
-        {!name.trim() ? '이름을 입력하세요' : !chosen ? '후보를 선택하세요' : `${name.trim()} 선수로 커리어 시작`}
-      </button>
+      <ConfirmButton
+        className="btn primary big block"
+        disabled={!chosen || !name.trim() || (throws === 'L' && !leftOk)}
+        skip={!hasCareer}
+        message="진행 중인 커리어가 있습니다. 새로 시작하면 기존 커리어는 사라집니다."
+        confirmLabel="새로 시작"
+        onConfirm={start}
+        label={!name.trim() ? '이름을 입력하세요' : !chosen ? '후보를 선택하세요' : `${name.trim()} 선수로 커리어 시작`}
+      />
     </div>
   );
 }

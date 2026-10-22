@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
   batRates,
   fmtAvg,
@@ -24,6 +24,46 @@ export function BallIcon({ className }: { className?: string }) {
       <circle cx="32" cy="32" r="30" fill="#fff" stroke="#d0d0d0" strokeWidth="2" />
       <path d="M14 10c8 8 8 36 0 44M50 10c-8 8-8 36 0 44" fill="none" stroke="#c8102e" strokeWidth="3" strokeDasharray="4 3" />
     </svg>
+  );
+}
+
+// 브라우저 confirm() 대신 쓰는 화면 안 확인 버튼 (아티팩트에서는 confirm 이 막혀 있다)
+export function ConfirmButton({
+  label,
+  message,
+  confirmLabel = '확인',
+  onConfirm,
+  className = 'btn',
+  disabled,
+  skip,
+}: {
+  label: ReactNode;
+  message: string;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  className?: string;
+  disabled?: boolean;
+  skip?: boolean;
+}) {
+  const [ask, setAsk] = useState(false);
+  if (!ask)
+    return (
+      <button className={className} disabled={disabled} onClick={() => (skip ? onConfirm() : setAsk(true))}>
+        {label}
+      </button>
+    );
+  return (
+    <div className="confirm" role="alertdialog">
+      <span>{message}</span>
+      <div className="row">
+        <button className="btn primary" onClick={() => (setAsk(false), onConfirm())}>
+          {confirmLabel}
+        </button>
+        <button className="btn" onClick={() => setAsk(false)}>
+          취소
+        </button>
+      </div>
+    </div>
   );
 }
 
