@@ -1,0 +1,29 @@
+{
+  "name": "baseball-life",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "베이스볼 라이프 — 육성선수에서 명예의 전당까지, 야구선수 커리어 시뮬레이션",
+  "scripts": {
+    "dev": "vite",
+    "dev:server": "node server/index.mjs",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "node server/index.mjs"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "@types/react": "^18.3.23",
+    "@types/react-dom": "^18.3.7",
+    "@vitejs/plugin-react": "^4.4.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.4"
+  }
+}
