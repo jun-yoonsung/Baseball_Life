@@ -1,5 +1,6 @@
 // 오프시즌 랜덤 이벤트. 각 선택지는 커리어를 직접 바꾸고 결과 문장을 돌려준다.
 import { countryOfTeam, moveTeam } from './contracts';
+import { grantItem } from './equipment';
 import { teamName, teamsOf } from './data';
 import { addRating, batOvr, overall, pitOvr, velocityKmh } from './ratings';
 import { clamp, type Rng } from './rng';
@@ -561,6 +562,32 @@ export const EVENTS: GameEvent[] = [
     ],
   },
 ];
+
+EVENTS.push({
+  id: 'sponsor',
+  title: '용품 스폰서 제안',
+  weight: 1.2,
+  cond: (c) => pro(c) && c.fame >= 50,
+  body: (c) => `야구용품 브랜드가 후원 계약을 제안했습니다. 시즌 장비 일체와 후원금 ${Math.round((c.fame * 60) / 100) * 100}만원을 줍니다.`,
+  options: [
+    {
+      id: 'sign',
+      label: '후원 계약을 맺는다',
+      apply: (c) => {
+        const krw = Math.round((c.fame * 60) / 100) * 100 * MAN;
+        pay(c, krw);
+        if (isBat(c)) {
+          grantItem(c, 'bat-custom');
+          grantItem(c, 'bg-custom');
+        }
+        if (isPit(c)) grantItem(c, 'pl-track');
+        grantItem(c, 'sp-custom');
+        return `후원 계약 체결! 맞춤 장비를 지원받고 ${Math.round(krw / MAN).toLocaleString()}만원을 받았습니다.`;
+      },
+    },
+    { id: 'no', label: '지금 쓰는 장비를 고집한다', apply: () => '익숙한 장비를 계속 쓰기로 했습니다.' },
+  ],
+});
 
 function posChangeTarget(c: Career): { pos: Career['batPos']; label: string } {
   switch (c.batPos) {

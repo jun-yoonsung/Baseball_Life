@@ -1,6 +1,6 @@
 // 타석 단위 확률 시뮬레이션.
 // 능력치를 리그 평균과 비교한 z값으로 바꿔 각 결과의 확률을 정한다.
-import { FIELD_SCALE, POS_ADJ } from './data';
+import { FIELD_SCALE, POS_ADJ, type LeagueEnv } from './data';
 import { clamp, type Rng } from './rng';
 import type { BatPos, BatRatings, BattingLine, PitchingLine, PitRatings } from './types';
 
@@ -21,29 +21,31 @@ const z = (v: number, avg: number) => {
   return raw > 1.5 ? 1.5 + (raw - 1.5) * 0.5 : raw;
 };
 
-export function batProbs(b: BatRatings, avg: number): PaProbs {
+export const BASE_ENV: LeagueEnv = { k: 1, bb: 1, hr: 1, babip: 0 };
+
+export function batProbs(b: BatRatings, avg: number, env: LeagueEnv = BASE_ENV): PaProbs {
   const zc = z(b.contact, avg);
   const zp = z(b.power, avg);
   const ze = z(b.eye, avg);
   const zs = z(b.speed, avg);
-  const k = clamp(0.185 * Math.exp(-0.33 * zc - 0.12 * ze + 0.06 * zp), 0.04, 0.42);
-  const bb = clamp(0.085 * Math.exp(0.3 * ze + 0.08 * zp), 0.025, 0.2);
+  const k = clamp(0.185 * env.k * Math.exp(-0.33 * zc - 0.12 * ze + 0.06 * zp), 0.04, 0.45);
+  const bb = clamp(0.085 * env.bb * Math.exp(0.3 * ze + 0.08 * zp), 0.025, 0.2);
   const hbp = 0.011;
-  const hr = clamp(0.024 * Math.exp(0.55 * zp + 0.08 * zc), 0.0015, 0.09);
-  const babip = clamp(0.31 + 0.018 * zc + 0.008 * zs, 0.22, 0.39);
+  const hr = clamp(0.024 * env.hr * Math.exp(0.55 * zp + 0.08 * zc), 0.0015, 0.09);
+  const babip = clamp(0.31 + env.babip + 0.018 * zc + 0.008 * zs, 0.22, 0.39);
   return split(k, bb, hbp, hr, babip, clamp(0.19 + 0.025 * zp + 0.008 * zs, 0.1, 0.32), clamp(0.025 + 0.012 * zs, 0.003, 0.07));
 }
 
-export function pitProbs(p: PitRatings, avg: number, reliever: boolean): PaProbs {
+export function pitProbs(p: PitRatings, avg: number, reliever: boolean, env: LeagueEnv = BASE_ENV): PaProbs {
   const zv = z(p.velocity + (reliever ? 3 : 0), avg);
   const zc = z(p.control, avg);
   const zs = z(p.stuff + (reliever ? 2 : 0), avg);
   const zb = z(p.breaking, avg);
-  const k = clamp(0.185 * Math.exp(0.22 * zv + 0.2 * zs + 0.2 * zb), 0.07, 0.42);
-  const bb = clamp(0.085 * Math.exp(-0.42 * zc + 0.05 * zv), 0.025, 0.2);
+  const k = clamp(0.185 * env.k * Math.exp(0.22 * zv + 0.2 * zs + 0.2 * zb), 0.07, 0.45);
+  const bb = clamp(0.085 * env.bb * Math.exp(-0.42 * zc + 0.05 * zv), 0.025, 0.2);
   const hbp = clamp(0.011 * Math.exp(-0.2 * zc), 0.004, 0.02);
-  const hr = clamp(0.024 * Math.exp(-0.28 * zs - 0.12 * zc - 0.1 * zv - 0.05 * zb), 0.008, 0.06);
-  const babip = clamp(0.31 - 0.01 * zs - 0.004 * zb, 0.25, 0.35);
+  const hr = clamp(0.024 * env.hr * Math.exp(-0.28 * zs - 0.12 * zc - 0.1 * zv - 0.05 * zb), 0.005, 0.06);
+  const babip = clamp(0.31 + env.babip - 0.01 * zs - 0.004 * zb, 0.24, 0.35);
   return split(k, bb, hbp, hr, babip, 0.19, 0.025);
 }
 
@@ -73,9 +75,9 @@ export function emptyPit(): PitchingLine {
   return { G: 0, GS: 0, W: 0, L: 0, SV: 0, HLD: 0, outs: 0, BF: 0, H: 0, S1: 0, D: 0, T: 0, HR: 0, ER: 0, BB: 0, HBP: 0, SO: 0 };
 }
 
-export function simBatting(line: BattingLine, b: BatRatings, avg: number, games: number, pa: number, rng: Rng, form = 0) {
+export function simBatting(line: BattingLine, b: BatRatings, avg: number, games: number, pa: number, rng: Rng, form = 0, env: LeagueEnv = BASE_ENV) {
   const adj = { ...b, contact: b.contact + form, power: b.power + form, eye: b.eye + form / 2 };
-  const p = batProbs(adj, avg);
+  const p = batProbs(adj, avg, env);
   const zs = z(b.speed, avg);
   const att = clamp(0.035 * Math.exp(1.1 * zs), 0.004, 0.33);
   const succ = clamp(0.68 + 0.07 * zs, 0.45, 0.9);
@@ -165,24 +167,36 @@ export function baseRuns(l: Pick<PitchingLine, 'H' | 'S1' | 'D' | 'T' | 'HR' | '
   return (A * Math.max(0, B)) / (Math.max(0, B) + C) + l.HR;
 }
 
-// 리그 평균(z=0) 기준값. 모든 리그가 같은 기준을 쓴다.
-const AVG_P = split(0.185, 0.085, 0.011, 0.024, 0.31, 0.19, 0.025);
-export const LG_WOBA = woba({ s: AVG_P.s, d: AVG_P.d, t: AVG_P.t, hr: AVG_P.hr, bb: AVG_P.bb, hbp: AVG_P.hbp, pa: 1 });
-export const LG_ERA = (() => {
-  const outsPerPa = AVG_P.k + AVG_P.out;
-  const bf = 27 / outsPerPa;
-  const r = baseRuns({
-    H: (AVG_P.s + AVG_P.d + AVG_P.t + AVG_P.hr) * bf,
-    S1: AVG_P.s * bf,
-    D: AVG_P.d * bf,
-    T: AVG_P.t * bf,
-    HR: AVG_P.hr * bf,
-    BB: AVG_P.bb * bf,
-    HBP: AVG_P.hbp * bf,
-    outs: 27,
-  });
-  return r * ER_FACTOR();
-})();
+// 리그 평균(z=0) 선수의 기준값. 리그 득점 환경마다 다르다.
+function avgProbs(env: LeagueEnv) {
+  return split(0.185 * env.k, 0.085 * env.bb, 0.011, 0.024 * env.hr, 0.31 + env.babip, 0.19, 0.025);
+}
+
+const memo = new Map<string, { woba: number; era: number }>();
+function baseline(env: LeagueEnv) {
+  const key = `${env.k}|${env.bb}|${env.hr}|${env.babip}`;
+  let v = memo.get(key);
+  if (!v) {
+    const p = avgProbs(env);
+    const bf = 27 / (p.k + p.out);
+    const runs = baseRuns({
+      H: (p.s + p.d + p.t + p.hr) * bf,
+      S1: p.s * bf,
+      D: p.d * bf,
+      T: p.t * bf,
+      HR: p.hr * bf,
+      BB: p.bb * bf,
+      HBP: p.hbp * bf,
+      outs: 27,
+    });
+    v = { woba: woba({ s: p.s, d: p.d, t: p.t, hr: p.hr, bb: p.bb, hbp: p.hbp, pa: 1 }), era: runs * ER_FACTOR() };
+    memo.set(key, v);
+  }
+  return v;
+}
+
+export const lgWoba = (env: LeagueEnv = BASE_ENV) => baseline(env).woba;
+export const lgEra = (env: LeagueEnv = BASE_ENV) => baseline(env).era;
 
 function ER_FACTOR() {
   return 0.9;
@@ -193,11 +207,11 @@ export function woba(x: { s: number; d: number; t: number; hr: number; bb: numbe
   return (0.69 * x.bb + 0.72 * x.hbp + 0.89 * x.s + 1.27 * x.d + 1.62 * x.t + 2.1 * x.hr) / x.pa;
 }
 
-export function battingWar(l: BattingLine, b: BatRatings, pos: BatPos, avg: number, seasonGames: number): number {
+export function battingWar(l: BattingLine, b: BatRatings, pos: BatPos, avg: number, seasonGames: number, env: LeagueEnv = BASE_ENV): number {
   if (l.PA === 0) return 0;
   const singles = l.H - l.D - l.T - l.HR;
   const w = woba({ s: singles, d: l.D, t: l.T, hr: l.HR, bb: l.BB, hbp: l.HBP, pa: l.PA });
-  const batRuns = ((w - LG_WOBA) / 1.2) * l.PA;
+  const batRuns = ((w - lgWoba(env)) / 1.2) * l.PA;
   const runRuns = l.SB * 0.2 - l.CS * 0.4;
   const [fs, as] = FIELD_SCALE[pos];
   const share = Math.min(1, l.G / Math.max(1, seasonGames));
@@ -207,11 +221,12 @@ export function battingWar(l: BattingLine, b: BatRatings, pos: BatPos, avg: numb
   return Math.round(((batRuns + runRuns + fieldRuns + posRuns + repl) / 10) * 10) / 10;
 }
 
-export function pitchingWar(l: PitchingLine, role: 'SP' | 'RP' | 'CL'): number {
+export function pitchingWar(l: PitchingLine, role: 'SP' | 'RP' | 'CL', env: LeagueEnv = BASE_ENV): number {
   if (l.outs === 0) return 0;
   const ip = l.outs / 3;
   const era = (l.ER * 9) / ip;
-  const repl = role === 'SP' ? LG_ERA * 1.25 : LG_ERA * 1.12;
+  const lg = lgEra(env);
+  const repl = role === 'SP' ? lg * 1.25 : lg * 1.12;
   const leverage = role === 'CL' ? 1.6 : role === 'RP' ? 1.2 : 1;
   return Math.round((((repl - era) * ip) / 9 / 10) * leverage * 10) / 10;
 }

@@ -93,6 +93,19 @@ export interface Award {
   league: string;
 }
 
+export interface StandingRow {
+  teamId: string;
+  w: number;
+  l: number;
+  gb: number;
+  seed?: number;
+}
+
+export interface StandingGroup {
+  name: string;
+  rows: StandingRow[];
+}
+
 export interface SeasonRecord {
   year: number;
   age: number;
@@ -109,6 +122,9 @@ export interface SeasonRecord {
   international?: string;
   salaryKRW: number;
   military?: string;
+  standings?: StandingGroup[];
+  postseason?: string[];
+  equipment?: string[];
 }
 
 export interface Contract {
@@ -150,6 +166,7 @@ export type DecisionKind =
   | 'retireSuggest'
   | 'released'
   | 'tommyJohn'
+  | 'national'
   | 'returnHome';
 
 export interface Decision {
@@ -220,10 +237,22 @@ export interface RetiredSummary {
   earningsKRW: number;
   primaryPos: BatPos | PitPos;
   grade: string;
+  hofVote?: { org: string; pct: number; inducted: boolean };
+}
+
+export interface OwnedItem {
+  id: string;
+  seasonsLeft: number;
+}
+
+export interface Callup {
+  key: 'P12' | 'OLY' | 'WBC' | 'AG';
+  name: string;
+  year: number;
 }
 
 export interface Career {
-  version: 1;
+  version: 2;
   id: string;
   seed: number;
   rngState: number;
@@ -273,7 +302,10 @@ export interface Career {
   peakOvr: number;
   rings: number;
   allStars: number;
-  national: { caps: number; medals: string[] };
+  national: { caps: number; medals: string[]; retired?: boolean; declined?: number };
+  callups: Callup[];
+  equipment: OwnedItem[];
+  world: { strength: Record<string, number> };
   lastReport?: SeasonRecord;
   retired?: RetiredSummary;
   submitted?: boolean;

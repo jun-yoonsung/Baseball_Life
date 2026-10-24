@@ -16,6 +16,7 @@ import {
   type RatingKey,
   type SeasonLine,
   type SeasonRecord,
+  type StandingGroup,
 } from '../engine';
 
 export function BallIcon({ className }: { className?: string }) {
@@ -377,9 +378,79 @@ export function SeasonReport({ rec, career, onClose }: { rec: SeasonRecord; care
           📌 {n}
         </p>
       ))}
+      {rec.equipment && rec.equipment.length > 0 && <p className="small muted">🧰 사용 기간이 끝난 장비: {rec.equipment.join(', ')} (장비 탭에서 새로 구입하세요)</p>}
+      {rec.standings && <Standings groups={rec.standings} highlight={career.teamHistory.at(-1)?.teamId ?? career.teamId} />}
+      {rec.postseason && rec.postseason.length > 0 && (
+        <details className="post-list">
+          <summary>포스트시즌 결과</summary>
+          <ol>
+            {rec.postseason.map((p, i) => (
+              <li key={i}>{p}</li>
+            ))}
+          </ol>
+        </details>
+      )}
       <button className="btn primary block" onClick={onClose} style={{ marginTop: 10 }}>
         오프시즌으로
       </button>
     </Modal>
+  );
+}
+
+export function Standings({ groups, highlight }: { groups: StandingGroup[]; highlight: string | null | undefined }) {
+  const mine = groups.findIndex((g) => g.rows.some((r) => r.teamId === highlight));
+  return (
+    <div className="standings">
+      <div className="lbl-sm">정규시즌 순위</div>
+      {groups.map((g, gi) => {
+        const table = (
+          <div className="table-wrap">
+            <table className="stats">
+              <thead>
+                <tr>
+                  <th>순위</th>
+                  <th className="l">팀</th>
+                  <th>승</th>
+                  <th>패</th>
+                  <th>승률</th>
+                  <th>게임차</th>
+                </tr>
+              </thead>
+              <tbody>
+                {g.rows.map((r, i) => (
+                  <tr key={r.teamId} className={r.teamId === highlight ? 'me' : ''}>
+                    <td>{i + 1}</td>
+                    <td className="l">
+                      <span className="row" style={{ gap: 6, flexWrap: 'nowrap' }}>
+                        <TeamEmblem teamId={r.teamId} size={16} />
+                        {teamName(r.teamId)}
+                        {r.seed && <span className="badge green">PS {r.seed}</span>}
+                      </span>
+                    </td>
+                    <td>{r.w}</td>
+                    <td>{r.l}</td>
+                    <td>{(r.w / (r.w + r.l)).toFixed(3).replace(/^0/, '')}</td>
+                    <td>{r.gb === 0 ? '-' : r.gb.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        return gi === mine || groups.length === 1 ? (
+          <div key={g.name}>
+            <div className="small" style={{ fontWeight: 700, margin: '6px 0 2px' }}>
+              {g.name}
+            </div>
+            {table}
+          </div>
+        ) : (
+          <details key={g.name}>
+            <summary className="small">{g.name}</summary>
+            {table}
+          </details>
+        );
+      })}
+    </div>
   );
 }

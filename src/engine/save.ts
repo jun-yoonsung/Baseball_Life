@@ -62,8 +62,8 @@ export function clearHistory() {
 
 export function validate(x: unknown): Career {
   const c = x as Career;
-  if (!c || typeof c !== 'object' || c.version !== 1 || typeof c.name !== 'string' || !Array.isArray(c.seasons) || !c.bat || !c.pit) {
-    throw new Error('올바른 저장 파일이 아닙니다.');
+  if (!c || typeof c !== 'object' || c.version !== 2 || typeof c.name !== 'string' || !Array.isArray(c.seasons) || !c.bat || !c.pit) {
+    throw new Error(c && (c as { version?: number }).version === 1 ? '실제 리그 업데이트 이전 저장 파일이라 불러올 수 없습니다. 새 커리어를 시작해 주세요.' : '올바른 저장 파일이 아닙니다.');
   }
   return c;
 }

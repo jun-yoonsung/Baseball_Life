@@ -1,4 +1,4 @@
-import { BAT_KEYS, PIT_KEYS, START_YEAR } from './data';
+import { BAT_KEYS, PIT_KEYS, START_YEAR, TEAMS } from './data';
 import { batOvr, overall, pitOvr } from './ratings';
 import { clamp, Rng } from './rng';
 import type {
@@ -169,9 +169,16 @@ export function makeCandidates(input: CreateInput, seed: number, count = 3): Can
   return list;
 }
 
+function initialStrength(seed: number): Record<string, number> {
+  const rng = new Rng(seed ^ 0x5bd1e995);
+  const out: Record<string, number> = {};
+  for (const t of TEAMS) if (t.country !== 'NONE') out[t.id] = Math.round(rng.normal(0, 1) * 100) / 100;
+  return out;
+}
+
 export function createCareer(input: CreateInput, cand: Candidate): Career {
   const c: Career = {
-    version: 1,
+    version: 2,
     id: `${Date.now().toString(36)}-${cand.seed.toString(36)}`,
     seed: cand.seed,
     rngState: cand.seed,
@@ -225,6 +232,9 @@ export function createCareer(input: CreateInput, cand: Candidate): Career {
     rings: 0,
     allStars: 0,
     national: { caps: 0, medals: [] },
+    callups: [],
+    equipment: [],
+    world: { strength: initialStrength(cand.seed) },
   };
   return c;
 }

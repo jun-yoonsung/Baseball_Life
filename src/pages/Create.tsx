@@ -38,6 +38,13 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
   );
 }
 
+// 드래프트 자격: KBO는 한국, NPB는 일본 학교 출신. MLB는 국제 아마추어 계약으로 누구나 입단할 수 있다.
+function startOptions(n: Nationality): Country[] {
+  if (n === 'KR') return ['KR', 'US'];
+  if (n === 'JP') return ['JP', 'US'];
+  return ['US'];
+}
+
 export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => void; hasCareer: boolean }) {
   const [name, setName] = useState('');
   const [nationality, setNationality] = useState<Nationality>('KR');
@@ -79,7 +86,14 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
         <div className="grid grid-2">
           <label className="field">
             국적
-            <select value={nationality} onChange={(e) => setNationality(e.target.value as Nationality)}>
+            <select
+              value={nationality}
+              onChange={(e) => {
+                const n = e.target.value as Nationality;
+                setNationality(n);
+                if (!startOptions(n).includes(startCountry)) setStartCountry(startOptions(n)[0]);
+              }}
+            >
               {NATIONALITIES.map((n) => (
                 <option key={n.id} value={n.id}>
                   {n.flag} {n.name}
@@ -91,12 +105,13 @@ export function CreatePage({ onCreate, hasCareer }: { onCreate: (c: Career) => v
           <label className="field">
             시작 국가
             <select value={startCountry} onChange={(e) => setStartCountry(e.target.value as Country)}>
-              {(['KR', 'JP', 'US'] as Country[]).map((c) => (
+              {startOptions(nationality).map((c) => (
                 <option key={c} value={c}>
-                  {COUNTRY_NAME[c]} ({c === 'KR' ? '한국 프로리그' : c === 'JP' ? '일본 프로리그' : '미국 빅리그'} 드래프트)
+                  {COUNTRY_NAME[c]} ({c === 'KR' ? 'KBO 신인 드래프트' : c === 'JP' ? 'NPB 드래프트 회의' : nationality === 'US' ? 'MLB 드래프트' : 'MLB 국제 아마추어 계약'})
                 </option>
               ))}
             </select>
+            <span className="muted small">KBO·NPB 드래프트는 자국 학교 출신만 참가할 수 있습니다. 다른 국적은 MLB 국제 아마추어 계약으로 시작합니다.</span>
           </label>
         </div>
         <div className="field">

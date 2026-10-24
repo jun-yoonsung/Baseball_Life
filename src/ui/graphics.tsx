@@ -28,10 +28,7 @@ function shade(hex: string, amt: number): string {
 
 export function teamCode(id: string | null | undefined): string {
   if (!id) return '?';
-  if (id === 'kr-military') return '軍';
-  if (id.startsWith('col-')) return 'U';
-  const nick = id.split('-')[1] ?? id;
-  return nick.charAt(0).toUpperCase();
+  return TEAM_MAP[id]?.abbr ?? id.charAt(0).toUpperCase();
 }
 
 export function TeamEmblem({ teamId, size = 36, title }: { teamId: string | null | undefined; size?: number; title?: string }) {
@@ -41,7 +38,18 @@ export function TeamEmblem({ teamId, size = 36, title }: { teamId: string | null
     <svg viewBox="0 0 40 44" width={size} height={size * 1.1} role={title ? 'img' : undefined} aria-label={title} aria-hidden={title ? undefined : true} className="emblem">
       <path d="M20 2 L37 8 V22 C37 33 29 39 20 42 C11 39 3 33 3 22 V8 Z" fill={c} stroke={shade(c, -0.35)} strokeWidth="1.5" />
       <path d="M20 6.5 L33 11 V22 C33 30 27.5 35 20 37.6 C12.5 35 7 30 7 22 V11 Z" fill="none" stroke={ink} strokeOpacity="0.35" strokeWidth="1.2" />
-      <text x="20" y="27.5" textAnchor="middle" fontSize="17" fontWeight="900" fill={ink} fontFamily="Georgia, 'Times New Roman', serif" fontStyle="italic">
+      <text
+        x="20"
+        y={teamCode(teamId).length > 2 ? 26 : 27.5}
+        textAnchor="middle"
+        fontSize={teamCode(teamId).length > 2 ? 10.5 : teamCode(teamId).length === 2 ? 13 : 17}
+        fontWeight="900"
+        fill={ink}
+        fontFamily="Georgia, 'Times New Roman', serif"
+        fontStyle="italic"
+        textLength={teamCode(teamId).length > 2 ? 26 : undefined}
+        lengthAdjust="spacingAndGlyphs"
+      >
         {teamCode(teamId)}
       </text>
     </svg>
@@ -116,7 +124,7 @@ export function PlayerAvatar({ c, size = 112, ring }: { c: AvatarCareer; size?: 
         <text x="60" y="110" textAnchor="middle" fontSize="15" fontWeight="900" fill={ink} fontFamily="Georgia, 'Times New Roman', serif">
           {num}
         </text>
-        <text x={left ? 64 : 56} y="51" textAnchor="middle" fontSize="8" fontWeight="900" fill={ink} fontFamily="Georgia, serif" fontStyle="italic">
+        <text x={left ? 64 : 56} y="51" textAnchor="middle" fontSize={teamCode(c.teamId).length > 2 ? 5.5 : 8} fontWeight="900" fill={ink} fontFamily="Georgia, serif" fontStyle="italic">
           {c.phase === 'retired' ? '' : teamCode(c.teamId)}
         </text>
       </g>
@@ -459,6 +467,15 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
 };
+ICONS.national = (
+  <>
+    <rect x="10" y="12" width="44" height="30" rx="3" fill="var(--surface)" stroke="var(--border)" strokeWidth="2" />
+    <circle cx="32" cy="27" r="8" fill="#c8102e" />
+    <path d="M24 27 a8 8 0 0 0 16 0 a4 4 0 0 0 -8 0 a4 4 0 0 1 -8 0" fill="#0047a0" />
+    <path d="M22 46 L32 58 L42 46" fill="var(--gold)" />
+    <circle cx="32" cy="48" r="7" fill="var(--gold)" stroke="#9a7212" />
+  </>
+);
 ICONS.undrafted = ICONS.draftChoice;
 ICONS.postingOffers = ICONS.posting;
 ICONS.returnHome = ICONS.posting;

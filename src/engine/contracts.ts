@@ -85,7 +85,10 @@ const LEVEL_FLOOR: Record<Country, number> = { KR: 54, JP: 58, US: 62 };
 function buildOffer(c: Career, teamId: string, country: Country, ovr: number, rng: Rng, mul = 1): Offer {
   const cur = CURRENCY_OF[country];
   const sal = roundMoney(marketSalary(ovr, c.age, country) * rng.range(0.85, 1.15) * mul, cur);
-  const years = yearsFor(c.age, ovr, country, rng);
+  const home = c.nationality === 'KR' || c.nationality === 'JP' || c.nationality === 'US' ? c.nationality : null;
+  // KBO·NPB에서 외국 국적 선수는 외국인 선수 계약(보통 1년)으로 뛴다
+  const foreign = country !== 'US' && home !== country;
+  const years = foreign ? 1 : yearsFor(c.age, ovr, country, rng);
   const bonus = country === 'KR' ? roundMoney(sal * years * 0.35, cur) : country === 'JP' ? roundMoney(sal * 0.5, cur) : 0;
   const level: Level =
     country === 'US' && ovr < 69 ? 'AAA' : majorLevel(country);
@@ -97,7 +100,7 @@ function buildOffer(c: Career, teamId: string, country: Country, ovr: number, rn
     bonus,
     type: 'fa',
     level,
-    note: country === 'US' && ovr < 69 ? '스플릿 계약 (마이너 시작 가능)' : undefined,
+    note: foreign ? '외국인 선수 계약 (1년)' : country === 'US' && ovr < 69 ? '스플릿 계약 (마이너 시작 가능)' : undefined,
   };
 }
 

@@ -113,11 +113,11 @@ export function App() {
         {route === 'save' && <SettingsPage career={career} setCareer={setCareer} notify={notify} />}
       </main>
       <footer className="footer">
-        <span>© 베이스볼 라이프 · 가상의 야구 커리어 시뮬레이션</span>
+        <span>© 베이스볼 라이프 · 야구 커리어 시뮬레이션 (개인 플레이용)</span>
         <span>
           <a href="#about">서비스 소개</a> · <a href="#guide">게임 가이드</a> · <a href="#rankings">랭킹</a>
         </span>
-        <span>등장하는 구단·리그·선수는 모두 가상이며 실존 단체와 무관합니다.</span>
+        <span>KBO·NPB·MLB 구단 명칭은 각 권리자에게 있으며, 경기 결과와 선수 기록은 시뮬레이션입니다.</span>
       </footer>
       {toast && <div className="toast">{toast}</div>}
     </div>

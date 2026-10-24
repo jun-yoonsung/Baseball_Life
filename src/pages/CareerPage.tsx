@@ -8,6 +8,11 @@ import {
   countIndividual,
   countMvp,
   currentLevelLabel,
+  DIV_NAME,
+  equipmentBonus,
+  SUBLEAGUE_NAME,
+  subLeagueOf,
+  TEAM_MAP,
   formatKRW,
   formatMoney,
   LEAGUES,
@@ -26,9 +31,10 @@ import {
   type RatingKey,
 } from '../engine';
 import { BattingTable, ConfirmButton, Meter, PitchingTable, PotentialBadge, RatingBar, SeasonReport, TeamLine } from '../ui/components';
+import { ShopTab } from './ShopTab';
 import { CareerTimeline, DecisionArt, HallPlaque, PlayerAvatar, Radar, SeasonSim, TrophyIcon, WarBars } from '../ui/graphics';
 
-type Tab = 'stats' | 'ratings' | 'awards' | 'log' | 'contract';
+type Tab = 'stats' | 'ratings' | 'shop' | 'awards' | 'log' | 'contract';
 
 export function CareerPage({ career, setCareer, notify }: { career: Career | null; setCareer: (c: Career | null) => void; notify: (m: string) => void }) {
   const [tab, setTab] = useState<Tab>('stats');
@@ -59,6 +65,16 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
 
   const c = career;
   const ovr = overall(c);
+  const equipOvr = (() => {
+    const b = equipmentBonus(c);
+    const bat = { ...c.bat };
+    const pit = { ...c.pit };
+    for (const [k, v] of Object.entries(b)) {
+      if (k in bat) (bat as Record<string, number>)[k] += v;
+      else (pit as Record<string, number>)[k] += v;
+    }
+    return overall({ ...c, bat, pit });
+  })();
   const nat = NAT_MAP[c.nationality];
   const pending = c.pending[0];
 
@@ -105,6 +121,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
               </div>
               <div className="row" style={{ marginTop: 6 }}>
                 <PotentialBadge v={c.scoutPotential} />
+                {equipOvr !== ovr && <span className="badge gold">장비 포함 {equipOvr}</span>}
                 {c.role === 'twoWay' && (
                   <span className="badge blue">
                     타자 {batOvr(c.bat, c.batPos)} · 투수 {pitOvr(c.pit, c.pitPos)}
@@ -225,6 +242,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
             ['ratings', '능력치'],
             ['awards', `수상 (${c.awards.length})`],
             ['log', '커리어 일지'],
+            ['shop', '장비'],
             ['contract', '계약·신상'],
           ] as [Tab, string][]
         ).map(([t, l]) => (
@@ -380,6 +398,7 @@ export function CareerPage({ career, setCareer, notify }: { career: Career | nul
         </section>
       )}
 
+      {tab === 'shop' && <ShopTab c={c} setCareer={setCareer} notify={notify} />}
       {tab === 'contract' && <ContractTab c={c} />}
 
       {sim && c.lastReport && <SeasonSim rec={c.lastReport} c={c} onDone={simDone} />}
@@ -481,7 +500,7 @@ function ContractTab({ c }: { c: Career }) {
                   : c.military.status === 'none'
                     ? '미필 (만 28세까지 입대)'
                     : c.military.status === 'serving'
-                      ? `복무 중 (${c.military.kind === 'sangmu' ? '국군체육부대' : '현역'})`
+                      ? `복무 중 (${c.military.kind === 'sangmu' ? '상무 피닉스' : '현역'})`
                       : c.military.status === 'exempt'
                         ? '면제 (병역 특례)'
                         : '필'}
@@ -489,7 +508,20 @@ function ContractTab({ c }: { c: Career }) {
             </tr>
             <tr>
               <td>소속 리그</td>
-              <td className="l">{c.level !== 'AMA' && c.level !== 'MIL' ? LEAGUES[c.level].name : '-'}</td>
+              <td className="l">
+                {c.level !== 'AMA' && c.level !== 'MIL' ? LEAGUES[c.level].name : '-'}
+                {subLeagueOf(c.teamId) && subLeagueOf(c.teamId) !== 'KBO' && ` · ${SUBLEAGUE_NAME[subLeagueOf(c.teamId)!]}`}
+                {TEAM_MAP[c.teamId ?? '']?.div && ` ${DIV_NAME[TEAM_MAP[c.teamId!].div!]}지구`}
+              </td>
+            </tr>
+            <tr>
+              <td>국가대표</td>
+              <td className="l">
+                {c.national.caps}회 소집
+                {c.national.declined ? ` · 소집 불참 ${c.national.declined}회` : ''}
+                {c.national.retired ? ' · 대표팀 은퇴' : ''}
+                {c.national.medals.length > 0 && ` · ${c.national.medals.join(', ')}`}
+              </td>
             </tr>
           </tbody>
         </table>

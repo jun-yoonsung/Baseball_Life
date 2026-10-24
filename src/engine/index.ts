@@ -8,3 +8,4 @@ export * from './ranking';
 export * from './save';
 export { opsOf } from './season';
 export { randomSeed } from './rng';
+export * from './equipment';

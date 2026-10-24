@@ -1,16 +1,20 @@
 // 한 시즌 진행: 전반기/후반기 시뮬레이션, 수상, 포스트시즌, 국제대회, 성장.
 import { countryOfTeam, moveTeam, toKRW } from './contracts';
 import {
-  AWARD_NAMES,
+  awardNames,
+  INTL_ENV,
   LEAGUES,
-  MAJOR_OF,
   NATION_STRENGTH,
   POS_NAME,
+  subLeagueOf,
   THRESHOLDS,
   teamName,
   teamsOf,
   tournamentsAfterSeason,
+  type Tournament,
 } from './data';
+import { applyEquipment, conditionBonus, injuryMultiplier, wearEquipment } from './equipment';
+import { evolveStrength, simulateLeague } from './league';
 import { adjust } from './events';
 import { addRating, applyGrowth, batOvr, overall, pitOvr } from './ratings';
 import { clamp, type Rng } from './rng';
@@ -20,12 +24,13 @@ import {
   emptyPit,
   finishPitchingHalf,
   pitchingWar,
+  lgEra,
   pitProbs,
   simBatting,
   simPitchApp,
   zOf,
 } from './sim';
-import type { Award, BattingLine, Career, Country, Level, PitchingLine, PitPos, SeasonLine, SeasonRecord } from './types';
+import type { Award, BattingLine, Callup, Career, Country, Level, PitchingLine, PitPos, SeasonLine, SeasonRecord } from './types';
 
 type BatRole = 'starter' | 'bench' | 'twoWay';
 type PitRole = 'rotation' | 'twoWayRotation' | 'closer' | 'setup' | 'middle';
@@ -186,7 +191,7 @@ function rollInjury(c: Career, rng: Rng, rec: SeasonRecord): number {
     c.log.push({ year: c.year, age: c.age, text: '재활했던 팔꿈치 인대가 다시 손상됐습니다.', tone: 'bad' });
     return Math.min(1, miss + 0.7);
   }
-  if (!rng.chance(base * c.hidden.injuryProne * ageF * intF * condF)) return miss;
+  if (!rng.chance(base * c.hidden.injuryProne * ageF * intF * condF * injuryMultiplier(c))) return miss;
   const sev = rng.weighted([
     ['minor', 0.65],
     ['moderate', 0.27],
@@ -225,7 +230,7 @@ function rollInjury(c: Career, rng: Rng, rec: SeasonRecord): number {
 function playHalf(c: Career, rec: SeasonRecord, st: SeasonState, half: 0 | 1, rng: Rng) {
   const a = assign(c, st, rng);
   if (c.military.status === 'serving') {
-    rec.military = c.military.kind === 'active' ? '현역 복무' : '국군체육부대 복무';
+    rec.military = c.military.kind === 'active' ? '현역 복무' : '상무 피닉스 복무';
     c.military.halvesLeft = (c.military.halvesLeft ?? 1) - 1;
     if (c.military.kind === 'active') {
       if (c.military.halvesLeft <= 0) discharge(c);
@@ -258,7 +263,7 @@ function playHalf(c: Career, rec: SeasonRecord, st: SeasonState, half: 0 | 1, rn
       g = Math.round(hg * avail * 0.78);
       pa = Math.round(g * rng.range(3.9, 4.3));
     }
-    simBatting(bl, c.bat, L.avg, g, pa, rng, st.form);
+    simBatting(bl, c.bat, L.avg, g, pa, rng, st.form, L.env);
     st.ptBat += (pa / 550) * (major ? 1 : 0.8);
   }
 
@@ -267,7 +272,7 @@ function playHalf(c: Career, rec: SeasonRecord, st: SeasonState, half: 0 | 1, rn
     const before = { ...pl };
     const reliever = a.pitRole === 'closer' || a.pitRole === 'setup' || a.pitRole === 'middle';
     const pr = { ...c.pit, velocity: c.pit.velocity + st.form / 2, stuff: c.pit.stuff + st.form / 2, control: c.pit.control + st.form / 2 };
-    const probs = pitProbs(pr, L.avg, reliever);
+    const probs = pitProbs(pr, L.avg, reliever, L.env);
     const zAll = zOf(pitOvr(c.pit, c.role === 'twoWay' ? 'SP' : c.pitPos), L.avg);
     let apps = 0;
     if (a.pitRole === 'rotation' || a.pitRole === 'twoWayRotation') {
@@ -293,15 +298,14 @@ function playHalf(c: Career, rec: SeasonRecord, st: SeasonState, half: 0 | 1, rn
     }
     pl.G += apps;
     finishPitchingHalf(pl, before, zOf(c.pit.composure, L.avg) + c.hidden.clutch * 0.3, rng);
-    decisions(pl, before, a.pitRole, apps, st.teamRating, rng);
+    decisions(pl, before, a.pitRole, apps, st.teamRating, rng, lgEra(L.env));
   }
 }
 
-function decisions(pl: PitchingLine, before: PitchingLine, role: PitRole, apps: number, team: number, rng: Rng) {
+function decisions(pl: PitchingLine, before: PitchingLine, role: PitRole, apps: number, team: number, rng: Rng, lg: number) {
   const outs = pl.outs - before.outs;
   if (outs <= 0) return;
   const era = ((pl.ER - before.ER) * 9) / (outs / 3);
-  const lg = 4.6;
   if (role === 'rotation' || role === 'twoWayRotation') {
     const dec = rng.binomial(apps, 0.72);
     const wp = clamp(0.5 + (lg - era) * 0.07 + team * 0.06, 0.15, 0.85);
@@ -341,13 +345,14 @@ function midSeason(c: Career, rec: SeasonRecord, st: SeasonState, rng: Rng) {
   if (majorLine) {
     const L = LEAGUES[majorLine.level];
     const war =
-      (majorLine.bat ? battingWar(majorLine.bat, c.bat, c.batPos, L.avg, L.games) : 0) +
-      (majorLine.pit ? pitchingWar(majorLine.pit, st.lineRole.get(`${majorLine.level}|${majorLine.teamId}`) ?? 'SP') : 0);
+      (majorLine.bat ? battingWar(majorLine.bat, c.bat, c.batPos, L.avg, L.games, L.env) : 0) +
+      (majorLine.pit ? pitchingWar(majorLine.pit, st.lineRole.get(`${majorLine.level}|${majorLine.teamId}`) ?? 'SP', L.env) : 0);
     if (war >= rng.normal(1.8, 0.4) * (L.games / 144) || (c.fame >= 80 && war > 0.5)) {
       rec.allStar = true;
       c.allStars++;
       adjust(c, 'fame', 4);
-      c.log.push({ year: c.year, age: c.age, text: `${L.name} 올스타에 선정됐습니다!`, tone: 'good' });
+      const lid = majorLine.level as 'KR1' | 'JP1' | 'MLB';
+      c.log.push({ year: c.year, age: c.age, text: `${awardNames(lid, subLeagueOf(majorLine.teamId)).allStar}에 선정됐습니다!`, tone: 'good' });
     }
   }
   // 콜업/강등 보정
@@ -390,97 +395,111 @@ export function opsOf(b: BattingLine): number {
 
 function postseason(c: Career, rec: SeasonRecord, st: SeasonState, rng: Rng) {
   const country = countryOfTeam(c.teamId);
-  if (!country || c.military.status === 'serving' || rec.military) {
-    rec.teamResult = rec.military ? rec.military : c.level === 'COL' ? '대학리그' : '-';
+  // 리그 전체는 매 시즌 진행된다. 선수가 뛰는 나라의 리그만 보여 준다.
+  const showCountry = country ?? (c.military.status === 'serving' ? 'KR' : null);
+  if (!showCountry) {
+    rec.teamResult = c.level === 'COL' ? '대학 야구' : rec.military ?? '-';
     return;
   }
-  const rating = st.teamRating + rec.majorWar * 0.12 + rng.normal(0, 0.3);
-  let rank: number;
-  let champP: number;
-  let series: string;
-  if (country === 'KR') {
-    rank = clamp(Math.round(5.5 - rating * 2.3), 1, 10);
-    champP = [0, 0.45, 0.22, 0.13, 0.08, 0.05][rank] ?? 0;
-    series = '한국시리즈';
-  } else if (country === 'JP') {
-    rank = clamp(Math.round(3.5 - rating * 1.6), 1, 6);
-    champP = [0, 0.3, 0.15, 0.08][rank] ?? 0;
-    series = '일본시리즈';
-  } else {
-    rank = clamp(Math.round(8 - rating * 3.4), 1, 15);
-    champP = [0, 0.16, 0.14, 0.1, 0.08, 0.07, 0.06][rank] ?? 0;
-    series = '월드시리즈';
+  const boost: Record<string, number> = {};
+  if (c.teamId && country) boost[c.teamId] = rec.majorWar * 0.13;
+  const res = simulateLeague(showCountry, c.world.strength, boost, rng);
+  rec.standings = res.groups;
+  rec.postseason = res.post;
+  if (!country || !c.teamId) {
+    rec.teamResult = rec.military ?? '-';
+    return;
   }
-  const prefix = country === 'KR' ? '정규시즌' : '리그';
-  const postCut = country === 'KR' ? 5 : country === 'JP' ? 3 : 6;
-  const champion = rank <= postCut && rng.chance(champP);
+  rec.teamResult = res.summary[c.teamId] ?? '-';
+  if (rec.military) rec.teamResult = `${rec.military} (소속팀: ${rec.teamResult})`;
+  const champion = res.champion === c.teamId;
   rec.champion = champion && st.majorAtEnd;
-  if (champion) {
-    rec.teamResult = `${prefix} ${rank}위 · ${series} 우승`;
-    if (st.majorAtEnd) {
-      c.rings++;
-      adjust(c, 'fame', 6);
-      c.log.push({ year: c.year, age: c.age, text: `${teamName(c.teamId)}, ${series} 우승! 우승 반지를 꼈습니다.`, tone: 'big' });
-      const lid = MAJOR_OF[country] as 'KR1' | 'JP1' | 'MLB';
-      if (rng.chance(clamp((rec.majorWar / 9) * (1 + c.hidden.clutch * 0.4), 0, 0.5))) {
-        rec.awards.push({ year: c.year, key: 'SERIES_MVP', label: AWARD_NAMES[lid].seriesMvp, league: lid });
-      }
+  const lid = (country === 'KR' ? 'KR1' : country === 'JP' ? 'JP1' : 'MLB') as 'KR1' | 'JP1' | 'MLB';
+  const N = awardNames(lid, subLeagueOf(c.teamId));
+  if (rec.champion) {
+    c.rings++;
+    adjust(c, 'fame', 6);
+    c.log.push({ year: c.year, age: c.age, text: `${teamName(c.teamId)}, ${N.series} 우승! 우승 반지를 꼈습니다.`, tone: 'big' });
+    if (rng.chance(clamp((rec.majorWar / 9) * (1 + c.hidden.clutch * 0.4), 0, 0.45))) {
+      rec.awards.push({ year: c.year, key: 'SERIES_MVP', label: N.seriesMvp, league: lid });
     }
-  } else if (rank <= postCut) {
-    const finalist = rng.chance(champP * 1.2);
-    rec.teamResult = `${prefix} ${rank}위 · ${finalist ? `${series} 준우승` : '포스트시즌 진출'}`;
-  } else {
-    rec.teamResult = `${prefix} ${rank}위`;
+  }
+  if (lid === 'MLB' && st.majorAtEnd && res.pennant.has(c.teamId) && 'lcsMvp' in N && rng.chance(clamp(rec.majorWar / 12, 0, 0.35))) {
+    rec.awards.push({ year: c.year, key: 'LCS_MVP', label: N.lcsMvp as string, league: lid });
   }
 }
+
+const TITLE: Record<'KR1' | 'JP1' | 'MLB', Record<string, string>> = {
+  KR1: { AVG: '타격왕', HR: '홈런왕', RBI: '타점왕', R: '득점왕', H: '최다안타', SB: '도루왕', OBP: '출루율 1위', SLG: '장타율 1위', W: '다승왕', ERA: '평균자책점 1위', SO: '탈삼진왕', SV: '세이브왕', HLD: '홀드왕' },
+  JP1: { AVG: '수위타자', HR: '홈런왕', RBI: '타점왕', R: '최다득점', H: '최다안타', SB: '도루왕', OBP: '최고출루율', SLG: '최고장타율', W: '최다승', ERA: '최우수방어율', SO: '최다탈삼진', SV: '최다세이브', HLD: '최우수중간투수' },
+  MLB: { AVG: '타격왕', HR: '홈런왕', RBI: '타점왕', R: '득점 1위', H: '최다안타', SB: '도루왕', OBP: '출루율 1위', SLG: '장타율 1위', W: '다승왕', ERA: '평균자책점 1위', SO: '탈삼진왕', SV: '세이브왕', HLD: '홀드 1위' },
+};
 
 function awards(c: Career, rec: SeasonRecord, st: SeasonState, rng: Rng) {
   const majors = [...st.lines.values()].filter((l) => isMajor(l.level));
   if (!majors.length) return;
   const main = majors.reduce((a, b) => ((a.bat?.PA ?? 0) + (a.pit?.outs ?? 0) >= (b.bat?.PA ?? 0) + (b.pit?.outs ?? 0) ? a : b));
   const lid = main.level as 'KR1' | 'JP1' | 'MLB';
+  const sub = subLeagueOf(main.teamId);
   const T = THRESHOLDS[lid];
-  const N = AWARD_NAMES[lid];
+  const N = awardNames(lid, sub);
+  const prefix = lid === 'KR1' ? '' : lid === 'JP1' ? (sub === 'PL' ? '퍼시픽 ' : '센트럴 ') : `${sub ?? 'AL'} `;
   const games = LEAGUES[lid].games;
   const s = (t: [number, number]) => rng.normal(t[0], t[1]);
   const add = (key: string, label: string) => rec.awards.push({ year: c.year, key, label, league: lid });
+  const title = (k: string) => add(`T_${k}`, `${prefix}${TITLE[lid][k]}`);
   const b = main.bat;
   const p = main.pit;
   const war = main.batWar + main.pitWar;
   const role = st.lineRole.get(`${main.level}|${main.teamId}`) ?? 'SP';
+  const posLabel = (pos: Career['batPos']) => (lid === 'KR1' && ['LF', 'CF', 'RF'].includes(pos) ? '외야수' : POS_NAME[pos]);
 
   if (b && b.PA > 0) {
     const qual = b.PA >= 3.1 * games;
-    if (qual && b.H / b.AB > s(T.AVG)) add('T_AVG', '타격왕');
-    if (b.HR > s(T.HR)) add('T_HR', '홈런왕');
-    if (b.RBI > s(T.RBI)) add('T_RBI', '타점왕');
-    if (b.SB > s(T.SB)) add('T_SB', '도루왕');
-    if (b.H > s(T.H)) add('T_H', '최다안타');
-    if (b.PA >= games * 2.5 && main.batWar > s(T.POS) + (c.batPos === 'DH' ? 0.8 : 0)) {
-      add('POS', `${N.pos} (${c.role === 'twoWay' && c.batPos !== 'DH' ? POS_NAME[c.batPos] : POS_NAME[c.batPos]})`);
+    const obp = b.PA ? (b.H + b.BB + b.HBP) / b.PA : 0;
+    const slg = b.AB ? (b.H + b.D + 2 * b.T + 3 * b.HR) / b.AB : 0;
+    if (qual && b.H / b.AB > s(T.AVG)) title('AVG');
+    if (b.HR > s(T.HR)) title('HR');
+    if (b.RBI > s(T.RBI)) title('RBI');
+    if (b.R > s(T.R)) title('R');
+    if (b.H > s(T.H)) title('H');
+    if (b.SB > s(T.SB)) title('SB');
+    if (qual && obp > s(T.OBP)) title('OBP');
+    if (qual && slg > s(T.SLG)) title('SLG');
+    const ofBonus = lid === 'KR1' && ['LF', 'CF', 'RF'].includes(c.batPos) ? -0.3 : 0;
+    if (b.PA >= games * 2.5 && main.batWar > s(T.POS) + (c.batPos === 'DH' ? 0.8 : 0) + ofBonus) {
+      add('POS', `${N.pos} (${posLabel(c.batPos)})`);
     }
     if (c.batPos !== 'DH' && b.G >= games * 0.6 && c.bat.fielding >= rng.normal(80, 3)) add('DEF', `${N.def} (${POS_NAME[c.batPos]})`);
+    if (lid === 'MLB' && qual && main.batWar > s([7, 0.9])) add('AARON', (N as { aaron: string }).aaron);
   }
   if (p && p.outs > 0) {
     const qual = p.outs / 3 >= games;
     const era = (p.ER * 27) / p.outs;
-    if (p.W > s(T.W)) add('T_W', '다승왕');
-    if (qual && era < s(T.ERA)) add('T_ERA', '평균자책점왕');
-    if (p.SO > s(T.SO)) add('T_SO', '탈삼진왕');
-    if (p.SV > s(T.SV)) add('T_SV', '세이브왕');
-    if (p.HLD > s(T.HLD)) add('T_HLD', '홀드왕');
+    if (p.W > s(T.W)) title('W');
+    if (qual && era < s(T.ERA)) title('ERA');
+    if (p.SO > s(T.SO)) title('SO');
+    if (p.SV > s(T.SV)) title('SV');
+    if (p.HLD > s(T.HLD)) title('HLD');
     const pw = main.pitWar * (role === 'SP' ? 1 : 0.8);
-    if (pw > s(T.PITCHER)) add(lid === 'MLB' ? 'CY' : 'POS', lid === 'MLB' ? N.pitcher! : `${N.pos} (투수)`);
+    if (lid === 'MLB') {
+      if (role === 'SP' && pw > s(T.PITCHER)) add('CY', (N as { cy: string }).cy);
+      if (role === 'CL' && p.SV >= 25 && main.pitWar > s([2.6, 0.6])) add('RELIEF', (N as { reliever: string }).reliever);
+    } else {
+      if (pw > s(T.PITCHER)) add('POS', `${N.pos} (투수)`);
+      // 사와무라상: 양 리그 통틀어 최고의 선발투수 한 명
+      if (lid === 'JP1' && role === 'SP' && p.GS >= 20 && p.W >= 12 && main.pitWar > s([6.2, 0.8])) add('SAWAMURA', '사와무라상');
+    }
   }
   // 연속 수상자에게는 기자단의 기준이 조금씩 엄격해진다
   const prevMvp = c.awards.filter((a) => a.key === 'MVP').length;
-  if (war > s(T.MVP) + prevMvp * 0.35 - (rec.teamResult.includes('1위') ? 0.3 : 0)) {
-    rec.awards.unshift({ year: c.year, key: 'MVP', label: `${LEAGUES[lid].name} MVP`, league: lid });
+  if (war > s(T.MVP) + prevMvp * 0.35 - (rec.teamResult.includes(' 1위') ? 0.3 : 0)) {
+    rec.awards.unshift({ year: c.year, key: 'MVP', label: N.mvp, league: lid });
   }
   const r = c.rookie[lid];
   const rookieOk = lid === 'MLB' ? r.pa < 130 && r.outs < 150 : r.pa < 60 && r.outs < 90 && (r.firstYear === null || c.year - r.firstYear <= 4);
   if (!r.won && rookieOk && war > s(T.ROY)) {
-    add('ROY', '신인왕');
+    add('ROY', N.roy);
     r.won = true;
   }
   for (const l of majors) {
@@ -491,60 +510,82 @@ function awards(c: Career, rec: SeasonRecord, st: SeasonState, rng: Rng) {
   }
 }
 
-function international(c: Career, rec: SeasonRecord, rng: Rng) {
-  const list = tournamentsAfterSeason(c.year);
+// 시즌이 끝나면 국가대표 선발 여부만 정한다. 참가·불참·대표팀 은퇴는 오프시즌에 선수가 고른다.
+function selectCallups(c: Career, rng: Rng) {
+  c.callups = [];
+  if (c.national.retired) return;
   const ovr = overall(c);
-  const parts: string[] = [];
-  for (const t of list) {
+  for (const t of tournamentsAfterSeason(c.year)) {
     if (t.key === 'AG' && !['KR', 'JP', 'TW'].includes(c.nationality)) continue;
     if (c.military.status === 'serving' && c.military.kind === 'active') continue;
-    if (c.level === 'AMA' || c.level === 'COL') continue;
-    if (c.level === 'MLB' && t.key !== 'WBC') continue; // 빅리거는 WBC 외 차출 불가
-    const bar = { WBC: 70, P12: 64, OLY: 66, AG: c.age <= 25 ? 60 : 72 }[t.key];
+    if (c.level === 'AMA' || c.level === 'COL' || !c.teamId) continue;
+    if (c.level === 'MLB' && t.key !== 'WBC') continue; // MLB 40인 로스터 선수는 WBC 외 차출 불가
+    const bar = callupBar(t, c.age);
     if (ovr < bar + rng.normal(0, 2)) continue;
-    c.national.caps++;
-    const [g, s, b] = NATION_STRENGTH[c.nationality][t.key];
-    const bonus = (ovr - bar) * 0.004 + c.hidden.clutch * 0.02;
-    const r = rng.next();
-    const medal = r < g + bonus ? '금메달' : r < g + s + bonus ? '은메달' : r < g + s + b + bonus ? '동메달' : null;
-    const label = t.key === 'WBC' || t.key === 'P12' ? (medal === '금메달' ? '우승' : medal === '은메달' ? '준우승' : medal === '동메달' ? '3위' : '탈락') : medal ?? '노메달';
-    let perf = '';
-    let great = false;
-    if (c.role !== 'pitcher') {
-      const l = emptyBat();
-      simBatting(l, c.bat, 67, 7, 28, rng, c.hidden.clutch * 2);
-      perf = `타율 ${(l.AB ? l.H / l.AB : 0).toFixed(3).replace(/^0/, '')} ${l.HR}홈런 ${l.RBI}타점`;
-      great = opsOf(l) > 1.0;
-    } else {
-      const l = emptyPit();
-      const pr = pitProbs(c.pit, 67, c.pitPos !== 'SP');
-      for (let i = 0; i < 3; i++) simPitchApp(l, pr, c.pitPos === 'SP' ? 15 : 3, rng);
-      finishPitchingHalf(l, emptyPit(), c.hidden.clutch, rng);
-      const era = l.outs ? (l.ER * 27) / l.outs : 0;
-      perf = `${Math.floor(l.outs / 3)}이닝 평균자책점 ${era.toFixed(2)} ${l.SO}탈삼진`;
-      great = era < 1.5;
-    }
-    parts.push(`${t.name} 국가대표 · ${label} (${perf})`);
-    if (medal) c.national.medals.push(`${t.name} ${medal}`);
-    if (medal === '금메달' && great && rng.chance(0.4)) {
-      rec.awards.push({ year: c.year, key: 'INTL_MVP', label: `${t.name} MVP`, league: 'INTL' });
-    }
-    adjust(c, 'fame', medal === '금메달' ? 8 : 3);
-    c.log.push({
-      year: c.year,
-      age: c.age,
-      text: `${t.name} 국가대표로 출전 · ${label}`,
-      tone: medal === '금메달' ? 'big' : 'info',
-    });
-    const exempt = c.nationality === 'KR' && ((t.key === 'AG' && medal === '금메달') || (t.key === 'OLY' && medal !== null));
-    if (exempt && c.military.status !== 'done' && c.military.status !== 'exempt') {
-      const serving = c.military.status === 'serving';
-      if (serving) discharge(c);
-      c.military.status = 'exempt';
-      c.log.push({ year: c.year, age: c.age, text: serving ? '병역 특례로 조기 전역했습니다!' : '병역 특례 혜택을 받았습니다!', tone: 'big' });
-    }
+    c.callups.push({ key: t.key, name: t.name, year: t.year });
   }
-  if (parts.length) rec.international = parts.join(' / ');
+}
+
+function callupBar(t: Pick<Tournament, 'key'>, age: number) {
+  return { WBC: 70, P12: 64, OLY: 66, AG: age <= 25 ? 60 : 72 }[t.key];
+}
+
+export function playTournament(c: Career, t: Callup, rng: Rng): string {
+  const ovr = overall(c);
+  const bar = callupBar(t, c.age);
+  c.national.caps++;
+  const [g, s, b] = NATION_STRENGTH[c.nationality][t.key];
+  const bonus = (ovr - bar) * 0.004 + c.hidden.clutch * 0.02;
+  const r = rng.next();
+  const medal = r < g + bonus ? '금메달' : r < g + s + bonus ? '은메달' : r < g + s + b + bonus ? '동메달' : null;
+  const label =
+    t.key === 'WBC' || t.key === 'P12'
+      ? medal === '금메달'
+        ? '우승'
+        : medal === '은메달'
+          ? '준우승'
+          : medal === '동메달'
+            ? '4강'
+            : '탈락'
+      : medal ?? '노메달';
+  let perf = '';
+  let great = false;
+  applyEquipment(c, 1);
+  if (c.role !== 'pitcher') {
+    const l = emptyBat();
+    simBatting(l, c.bat, 67, 7, 28, rng, c.hidden.clutch * 2, INTL_ENV);
+    perf = `타율 ${(l.AB ? l.H / l.AB : 0).toFixed(3).replace(/^0/, '')} ${l.HR}홈런 ${l.RBI}타점`;
+    great = opsOf(l) > 1.0;
+  } else {
+    const l = emptyPit();
+    const pr = pitProbs(c.pit, 67, c.pitPos !== 'SP', INTL_ENV);
+    for (let i = 0; i < 3; i++) simPitchApp(l, pr, c.pitPos === 'SP' ? 15 : 3, rng);
+    finishPitchingHalf(l, emptyPit(), c.hidden.clutch, rng);
+    const era = l.outs ? (l.ER * 27) / l.outs : 0;
+    perf = `${Math.floor(l.outs / 3)}이닝 평균자책점 ${era.toFixed(2)} ${l.SO}탈삼진`;
+    great = era < 1.5;
+  }
+  applyEquipment(c, -1);
+  const text = `${t.name} 국가대표 · ${label} (${perf})`;
+  const last = c.seasons[c.seasons.length - 1];
+  if (last) last.international = last.international ? `${last.international} / ${text}` : text;
+  if (medal) c.national.medals.push(`${t.name} ${medal}`);
+  if (medal === '금메달' && great && rng.chance(0.4)) {
+    const aw = { year: t.year, key: 'INTL_MVP', label: `${t.name} MVP`, league: 'INTL' };
+    c.awards.push(aw);
+    last?.awards.push(aw);
+  }
+  adjust(c, 'fame', medal === '금메달' ? 8 : 3);
+  adjust(c, 'condition', -6);
+  c.log.push({ year: c.year, age: c.age, text: `${t.name} 국가대표로 출전 · ${label} (${perf})`, tone: medal === '금메달' ? 'big' : 'info' });
+  const exempt = c.nationality === 'KR' && ((t.key === 'AG' && medal === '금메달') || (t.key === 'OLY' && medal !== null));
+  if (exempt && c.military.status !== 'done' && c.military.status !== 'exempt') {
+    const serving = c.military.status === 'serving';
+    if (serving) discharge(c);
+    c.military.status = 'exempt';
+    c.log.push({ year: c.year, age: c.age, text: serving ? '병역 특례로 조기 전역했습니다!' : '병역 특례(체육요원) 혜택을 받았습니다!', tone: 'big' });
+  }
+  return text;
 }
 
 export function simulateSeason(c: Career, rng: Rng): SeasonRecord {
@@ -566,7 +607,7 @@ export function simulateSeason(c: Career, rng: Rng): SeasonRecord {
   const st: SeasonState = {
     inc: {},
     form: rng.normal(0, 2) + (c.morale - 50) / 25 + (c.flags.motivated ? 1.5 : 0),
-    teamRating: rng.normal(0, 1),
+    teamRating: 0,
     callup: 0,
     majorHalves: 0,
     majorAtEnd: false,
@@ -576,6 +617,10 @@ export function simulateSeason(c: Career, rng: Rng): SeasonRecord {
     ptPit: 0,
   };
   delete c.flags.motivated;
+  evolveStrength(c.world.strength, rng);
+  st.teamRating = c.teamId ? c.world.strength[c.teamId] ?? 0 : 0;
+  applyEquipment(c, 1);
+  c.condition = clamp(c.condition + conditionBonus(c), 0, 100);
   const startCountry = countryOfTeam(c.teamId);
   const startedServing = c.military.status === 'serving';
 
@@ -587,15 +632,18 @@ export function simulateSeason(c: Career, rng: Rng): SeasonRecord {
 
   for (const l of st.lines.values()) {
     const L = LEAGUES[l.level];
-    if (l.bat) l.batWar = battingWar(l.bat, c.bat, c.batPos, L.avg, L.games);
-    if (l.pit) l.pitWar = pitchingWar(l.pit, st.lineRole.get(`${l.level}|${l.teamId}`) ?? 'SP');
+    if (l.bat) l.batWar = battingWar(l.bat, c.bat, c.batPos, L.avg, L.games, L.env);
+    if (l.pit) l.pitWar = pitchingWar(l.pit, st.lineRole.get(`${l.level}|${l.teamId}`) ?? 'SP', L.env);
     rec.lines.push(l);
   }
   rec.majorWar = Math.round(rec.lines.filter((l) => isMajor(l.level)).reduce((s, l) => s + l.batWar + l.pitWar, 0) * 10) / 10;
 
   postseason(c, rec, st, rng);
   awards(c, rec, st, rng);
-  international(c, rec, rng);
+  applyEquipment(c, -1);
+  const worn = wearEquipment(c);
+  if (worn.length) rec.equipment = worn;
+  selectCallups(c, rng);
   for (const a of rec.awards) c.awards.push(a as Award);
   if (rec.awards.length) adjust(c, 'fame', 3 * rec.awards.length);
   const mvp = rec.awards.find((a) => a.key === 'MVP');

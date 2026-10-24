@@ -88,7 +88,8 @@ export function buildSummary(c: Career): RetiredSummary {
   for (const [team, e] of byTeam) {
     if (e.seasons >= 10 && (e.war >= 35 || (c.rings >= 2 && e.war >= 25) || (mvp >= 1 && e.war >= 28))) retiredNumber = teamName(team);
   }
-  const hallOfFame = war >= 55 || mvp >= 3 || (war >= 45 && awardsCount >= 10);
+  const hofVote = hallOfFameVote(c, mvp, awardsCount);
+  const hallOfFame = !!hofVote?.inducted;
   const grade =
     war >= 80
       ? '레전드'
@@ -125,7 +126,30 @@ export function buildSummary(c: Career): RetiredSummary {
     earningsKRW: c.earningsKRW,
     primaryPos,
     grade,
+    hofVote,
   };
+}
+
+// 명예의 전당 투표. 1군 WAR가 가장 많은 리그의 전당 기준으로 득표율을 계산한다.
+function hallOfFameVote(c: Career, mvp: number, awards: number): RetiredSummary['hofVote'] {
+  const byLeague: Record<string, { war: number; seasons: number }> = {};
+  for (const s of c.seasons) {
+    for (const lid of new Set(s.lines.filter((l) => MAJOR.includes(l.level)).map((l) => l.level))) {
+      const e = (byLeague[lid] ??= { war: 0, seasons: 0 });
+      e.seasons++;
+      e.war += s.lines.filter((l) => l.level === lid).reduce((a, l) => a + l.batWar + l.pitWar, 0);
+    }
+  }
+  const best = Object.entries(byLeague).sort((a, b) => b[1].war - a[1].war)[0];
+  if (!best) return undefined;
+  const [lid, e] = best;
+  const org = lid === 'MLB' ? 'MLB 명예의 전당' : lid === 'JP1' ? '일본 야구 전당' : 'KBO 명예의 전당';
+  const need = lid === 'MLB' ? 10 : 10;
+  if (e.seasons < need) return { org, pct: 0, inducted: false };
+  const center = lid === 'MLB' ? 58 : lid === 'JP1' ? 48 : 45;
+  const score = e.war + mvp * 4 + awards * 0.4 + c.rings * 1.5;
+  const pct = Math.round(1000 / (1 + Math.exp(-(score - center) / 6))) / 10;
+  return { org, pct, inducted: pct >= 75 };
 }
 
 export function posLabel(p: string) {

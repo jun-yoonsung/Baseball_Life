@@ -3,7 +3,7 @@ import { advanceSeason, resolveDecision, retireNow, startCareer } from './career
 import { createCareer, makeCandidates, RATING_SUM, type CreateInput } from './create';
 import { buildEntry, rankEntries } from './ranking';
 import { Rng } from './rng';
-import { batProbs, LG_ERA, LG_WOBA } from './sim';
+import { batProbs, lgEra, lgWoba } from './sim';
 import { careerWar, majorLines, sumBat, sumPit } from './summary';
 import type { Career } from './types';
 import { exportCareer, importCareer } from './save';
@@ -60,9 +60,9 @@ describe('model calibration', () => {
     const ab = 1 - p.bb - p.hbp;
     expect(h / ab).toBeGreaterThan(0.25);
     expect(h / ab).toBeLessThan(0.28);
-    expect(LG_WOBA).toBeGreaterThan(0.3);
-    expect(LG_ERA).toBeGreaterThan(4);
-    expect(LG_ERA).toBeLessThan(5.2);
+    expect(lgWoba()).toBeGreaterThan(0.3);
+    expect(lgEra()).toBeGreaterThan(4);
+    expect(lgEra()).toBeLessThan(5.2);
   });
 });
 
@@ -129,5 +129,63 @@ describe('full careers', () => {
     }
     const ranked = rankEntries(entries);
     for (let i = 1; i < ranked.length; i++) expect(ranked[i].rank!).toBeGreaterThanOrEqual(ranked[i - 1].rank!);
+  });
+});
+
+describe('real leagues', () => {
+  it('builds standings and a full postseason for each country', async () => {
+    const { simulateLeague } = await import('./league');
+    const strength: Record<string, number> = {};
+    const rng = new Rng(9);
+    const kr = simulateLeague('KR', strength, {}, rng);
+    expect(kr.groups).toHaveLength(1);
+    expect(kr.groups[0].rows).toHaveLength(10);
+    expect(kr.post.some((p) => p.startsWith('한국시리즈'))).toBe(true);
+    const jp = simulateLeague('JP', strength, {}, rng);
+    expect(jp.groups.map((g) => g.name)).toEqual(['센트럴리그', '퍼시픽리그']);
+    const us = simulateLeague('US', strength, {}, rng);
+    expect(us.groups).toHaveLength(6);
+    expect(us.groups.flatMap((g) => g.rows).filter((r) => r.seed).length).toBe(12);
+    expect(us.summary[us.champion]).toContain('월드시리즈 우승');
+  });
+
+  it('equipment boosts only during the season and costs money', async () => {
+    const { buyItem, equipmentBonus } = await import('./equipment');
+    const cand = makeCandidates(inputs[0], 77)[0];
+    let c = startCareer(createCareer(inputs[0], cand));
+    c = { ...c, moneyKRW: 1e9 };
+    const before = c.moneyKRW;
+    c = buyItem(c, 'bat-custom');
+    expect(c.moneyKRW).toBe(before - 2500 * 10000);
+    expect(equipmentBonus(c).power).toBe(3);
+    expect(c.bat.power).toBe(cand.bat.power);
+  });
+
+  it('national team call-ups can be declined or retired from', () => {
+    const rng = new Rng(3);
+    let found = false;
+    for (let i = 0; i < 30 && !found; i++) {
+      const input = inputs[i % 2];
+      let c = startCareer(createCareer(input, makeCandidates(input, 400 + i)[0]));
+      for (let n = 0; n < 25 && c.phase !== 'retired'; n++) {
+        while (c.pending.length) {
+          const d = c.pending[0];
+          if (d.kind === 'national') {
+            found = true;
+            const caps = c.national.caps;
+            c = resolveDecision(c, d.id, 'decline');
+            expect(c.national.caps).toBe(caps);
+            expect(c.national.declined).toBe(1);
+            break;
+          }
+          const o = d.options.filter((x) => !x.disabled && x.id !== 'retire')[0] ?? d.options[0];
+          c = resolveDecision(c, d.id, o.id);
+        }
+        if (found || c.phase === 'retired') break;
+        c = advanceSeason(c);
+      }
+    }
+    expect(found).toBe(true);
+    void rng;
   });
 });

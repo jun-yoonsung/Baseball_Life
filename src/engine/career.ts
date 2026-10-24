@@ -4,9 +4,9 @@ import { COUNTRY_NAME, CURRENCY_OF, formatMoney, LEAGUES, MIN_SALARY, POS_NAME, 
 import { adjust, EVENT_MAP, pickEvents } from './events';
 import { addRating, overall } from './ratings';
 import { clamp, Rng } from './rng';
-import { simulateSeason } from './season';
+import { playTournament, simulateSeason } from './season';
 import { buildSummary } from './summary';
-import type { Career, Country, Decision, DecisionOption, Level, Offer } from './types';
+import type { Callup, Career, Country, Decision, DecisionOption, Level, Offer } from './types';
 
 let decisionSeq = 0;
 const did = (kind: string) => `${kind}-${Date.now().toString(36)}-${(decisionSeq++).toString(36)}`;
@@ -24,7 +24,12 @@ export function startCareer(c: Career): Career {
 
 function draftChoiceDecision(c: Career, college: boolean): Decision {
   const country = COUNTRY_NAME[c.startCountry];
-  const options: DecisionOption[] = [{ id: 'draft', label: `${country} 신인 드래프트 참가`, desc: '프로 구단의 지명을 기다립니다.' }];
+  const intl = c.startCountry === 'US' && HOME[c.nationality] !== 'US';
+  const options: DecisionOption[] = [
+    intl
+      ? { id: 'draft', label: 'MLB 국제 아마추어 계약', desc: '쇼케이스에 나가 MLB 구단들의 계약 제안을 기다립니다.' }
+      : { id: 'draft', label: `${DRAFT_NAME[c.startCountry]} 참가`, desc: `${country} 프로 구단의 지명을 기다립니다.` },
+  ];
   if (!college) {
     options.push({ id: 'college', label: '대학 진학', desc: '4년간 대학에서 기량을 키운 뒤 다시 드래프트에 도전합니다. (FA 요건 1년 단축)' });
     if (c.startCountry !== 'US') {
@@ -48,9 +53,37 @@ function draftChoiceDecision(c: Career, college: boolean): Decision {
   };
 }
 
+const HOME: Partial<Record<Career['nationality'], Country>> = { KR: 'KR', JP: 'JP', US: 'US' };
+const DRAFT_NAME: Record<Country, string> = { KR: 'KBO 신인 드래프트', JP: 'NPB 드래프트 회의', US: 'MLB 드래프트' };
+
+// 하위 팀부터 지명한다 (전력이 약한 팀이 앞 순번)
+function draftOrder(c: Career, country: Country) {
+  return [...teamsOf(country)].sort((a, b) => (c.world.strength[a.id] ?? 0) - (c.world.strength[b.id] ?? 0));
+}
+
+function internationalSigning(c: Career, rng: Rng, score: number) {
+  if (score < 46) {
+    log(c, 'MLB 구단들의 국제 아마추어 계약 제안을 받지 못했습니다.', 'bad');
+    c.pending.unshift(undraftedDecision(c));
+    return;
+  }
+  const bonus = roundMoney(score >= 63 ? rng.range(2e6, 4.5e6) : score >= 58 ? rng.range(5e5, 1.5e6) : score >= 52 ? rng.range(1e5, 3e5) : rng.range(1e4, 5e4), 'USD');
+  const team = rng.pick(teamsOf('US'));
+  const label = `${c.year - 1} MLB 국제 아마추어 자유계약`;
+  c.draft = { year: c.year - 1, label, teamId: team.id };
+  signContract(c, { teamId: team.id, years: 1, salary: 35_000, currency: 'USD', bonus, type: 'minor', level: 'A' }, rng);
+  c.flags.directAbroad = 1;
+  log(c, `${label} — ${team.name}와 계약! 계약금 ${formatMoney(bonus, 'USD')}`, bonus >= 1e6 ? 'big' : 'good');
+}
+
 function runDraft(c: Career, rng: Rng) {
   const country = c.startCountry;
   const score = overall(c) * 0.55 + c.hidden.potential * 0.45 + rng.normal(0, 3);
+  // MLB 드래프트는 미국·캐나다·푸에르토리코 아마추어 대상. 그 밖의 국적은 국제 아마추어 계약으로 입단한다.
+  if (country === 'US' && HOME[c.nationality] !== 'US') {
+    internationalSigning(c, rng, score);
+    return;
+  }
   const maxRound = country === 'KR' ? 11 : country === 'JP' ? 7 : 20;
   const step = country === 'US' ? 1 : 1.5;
   let round = score >= 63 ? 1 : Math.floor((63 - score) / step) + 2;
@@ -60,8 +93,9 @@ function runDraft(c: Career, rng: Rng) {
     return;
   }
   round = Math.max(1, round);
-  const pick = rng.int(1, country === 'US' ? 30 : country === 'JP' ? 12 : 10);
-  const team = rng.pick(teamsOf(country));
+  const order = draftOrder(c, country);
+  const pick = rng.int(1, order.length);
+  const team = order[pick - 1];
   const cur = CURRENCY_OF[country];
   const bonusTable: Record<Country, number[]> = {
     KR: [0, 3e8, 1.2e8, 9e7, 7e7, 6e7, 5e7, 4e7, 4e7, 3e7, 3e7, 3e7],
@@ -71,7 +105,7 @@ function runDraft(c: Career, rng: Rng) {
   let bonus = bonusTable[country][round] ?? bonusTable[country][bonusTable[country].length - 1];
   if (round === 1 && pick <= 3) bonus *= country === 'US' ? 3 : 1.6;
   bonus = roundMoney(bonus, cur);
-  const label = `${c.year - 1} ${COUNTRY_NAME[country]} 신인드래프트 ${round}라운드 ${pick}순위`;
+  const label = `${c.year - 1} ${DRAFT_NAME[country]} ${round}라운드 ${pick}순위`;
   c.draft = { year: c.year - 1, label, teamId: team.id };
   const salary = country === 'KR' ? 3e7 : country === 'JP' ? 7e6 : 35_000;
   signContract(
@@ -137,6 +171,24 @@ function offseason(c: Career, rng: Rng, war: number) {
     });
   }
 
+  // 국가대표 소집
+  for (const t of c.callups ?? []) {
+    const exemptHope = c.nationality === 'KR' && c.military.status !== 'exempt' && c.military.status !== 'done' && (t.key === 'AG' || t.key === 'OLY');
+    c.pending.push({
+      id: did('nat'),
+      kind: 'national',
+      title: `국가대표 소집 · ${t.name}`,
+      body: `${t.name} 대표팀 최종 명단에 이름을 올렸습니다.${exemptHope ? (t.key === 'AG' ? ' 금메달을 따면 병역 특례를 받습니다.' : ' 메달을 따면 병역 특례를 받습니다.') : ''} 국가대표 경력 ${c.national.caps}회.`,
+      options: [
+        { id: 'join', label: '대표팀에 합류한다', desc: '명예와 인기를 얻지만 휴식이 줄어 컨디션이 떨어집니다.' },
+        { id: 'decline', label: '소속팀에 집중한다', desc: '이번 대회는 불참합니다. 구단 신뢰가 오르지만 여론은 아쉬워합니다.' },
+        { id: 'retire', label: '국가대표 은퇴를 선언한다', desc: '앞으로 대표팀에 뽑히지 않습니다.', disabled: c.national.caps === 0 },
+      ],
+      data: { callup: t },
+    });
+  }
+  c.callups = [];
+
   // 대학
   if (c.level === 'COL') {
     c.collegeYears++;
@@ -187,7 +239,7 @@ function offseason(c: Career, rng: Rng, war: number) {
       id: did('posting'),
       kind: 'posting',
       title: '빅리그 도전?',
-      body: `${country === 'KR' ? '한국' : '일본'}에서 ${c.service[country]}시즌을 뛰어 포스팅 자격을 얻었습니다. 미국 빅리그에 도전할까요?`,
+      body: `${country === 'KR' ? '한국' : '일본'}에서 ${c.service[country]}시즌을 뛰어 포스팅 자격을 얻었습니다. MLB에 도전할까요?`,
       options: [
         { id: 'post', label: '포스팅을 신청한다', desc: '구단이 동의하면 빅리그 구단들의 제안을 받습니다.' },
         { id: 'stay', label: '팀에 남는다', desc: '감독 신뢰가 오릅니다.' },
@@ -207,7 +259,7 @@ function offseason(c: Career, rng: Rng, war: number) {
         title: '병역 문제',
         body: `만 ${c.age}세. 병역 의무를 언제, 어떻게 해결할까요? 만 28세가 되면 현역으로 입대해야 합니다. (아시안게임 금메달, 올림픽 메달 시 면제)`,
         options: [
-          { id: 'sangmu', label: '국군체육부대 지원', desc: '합격하면 1년 반 동안 퓨처스리그에서 뛰며 복무합니다.', disabled: c.age > 27 },
+          { id: 'sangmu', label: '상무 피닉스(국군체육부대) 지원', desc: '합격하면 1년 반 동안 퓨처스리그에서 뛰며 복무합니다.', disabled: c.age > 27 },
           { id: 'active', label: '현역 입대', desc: '1년 반 동안 야구를 쉬어야 합니다. 능력치가 떨어집니다.' },
           { id: 'later', label: '입대를 미룬다', desc: '국제대회 메달로 면제를 노립니다.', disabled: c.age >= 27 },
         ],
@@ -339,7 +391,7 @@ function enlist(c: Career, kind: 'sangmu' | 'active') {
   c.military = { status: 'serving', kind, halvesLeft: 3, returnTeamId: c.teamId ?? undefined, returnLevel: c.level };
   if (kind === 'sangmu') {
     c.level = 'KR2';
-    log(c, '국군체육부대에 입대했습니다. 퓨처스리그에서 뛰며 복무합니다.', 'info');
+    log(c, '상무 피닉스에 입대했습니다. 퓨처스리그에서 뛰며 복무합니다.', 'info');
   } else {
     c.level = 'MIL';
     log(c, '현역으로 입대했습니다. 잠시 그라운드를 떠납니다.', 'info');
@@ -427,7 +479,7 @@ export function resolveDecision(input: Career, decisionId: string, optionId: str
       const o = offers[Number(optionId.replace('offer-', ''))];
       if (!o) break;
       const same = o.teamId === c.teamId;
-      const offer: Offer = d.kind === 'postingOffers' ? { ...o, type: 'posting' } : o;
+      const offer: Offer = d.kind === 'postingOffers' && o.type !== 'minor' ? { ...o, type: 'posting' } : o;
       signContract(c, offer, rng);
       if (d.kind === 'fa') {
         c.faCount++;
@@ -458,9 +510,15 @@ export function resolveDecision(input: Career, decisionId: string, optionId: str
         log(c, '구단이 포스팅을 허락하지 않았습니다.', 'bad');
         break;
       }
+      // 만 25세 미만은 MLB 국제 아마추어 규정을 적용받아 마이너 계약만 가능하다
+      const young = c.age < 25;
       const offers = makeOffers(c, rng, { domestic: false, abroad: true, includeCurrent: false })
         .filter((o) => o.currency === 'USD')
-        .map((o) => ({ ...o, type: 'posting' as const }));
+        .map((o) =>
+          young
+            ? { ...o, type: 'minor' as const, years: 1, salary: 35_000, bonus: roundMoney(Math.min(2.5e6, o.salary * 0.15), 'USD'), level: 'AAA' as Level, note: '만 25세 미만 국제 아마추어 규정 (마이너 계약)' }
+            : { ...o, type: 'posting' as const },
+        );
       applyAgent(c, offers);
       if (!offers.length) {
         adjust(c, 'morale', -10);
@@ -482,7 +540,7 @@ export function resolveDecision(input: Career, decisionId: string, optionId: str
         const ok = rng.chance(overall(c) >= 52 ? 0.85 : 0.4);
         if (ok) enlist(c, 'sangmu');
         else {
-          log(c, '국군체육부대 서류 전형에서 탈락했습니다.', 'bad');
+          log(c, '상무 서류 전형에서 탈락했습니다.', 'bad');
           if (c.age >= 27) enlist(c, 'active');
         }
       } else if (optionId === 'active') enlist(c, 'active');
@@ -492,6 +550,24 @@ export function resolveDecision(input: Career, decisionId: string, optionId: str
     case 'retireSuggest': {
       if (optionId === 'retire') retireInPlace(c, '박수 받으며 은퇴를 선언했습니다.');
       else log(c, '현역 연장을 선언했습니다!', 'info');
+      break;
+    }
+    case 'national': {
+      const t = d.data?.callup as Callup | undefined;
+      if (!t) break;
+      if (optionId === 'join') playTournament(c, t, rng);
+      else if (optionId === 'decline') {
+        c.national.declined = (c.national.declined ?? 0) + 1;
+        adjust(c, 'trust', 4);
+        adjust(c, 'fame', -4);
+        adjust(c, 'condition', 6);
+        log(c, `${t.name} 대표팀 소집에 응하지 않고 소속팀 훈련에 집중했습니다.`, 'info');
+      } else {
+        c.national.retired = true;
+        c.pending = c.pending.filter((x) => x.kind !== 'national');
+        adjust(c, 'fame', -2);
+        log(c, `국가대표 은퇴를 선언했습니다. (A매치 ${c.national.caps}회${c.national.medals.length ? ` · ${c.national.medals.join(', ')}` : ''})`, 'big');
+      }
       break;
     }
     case 'tommyJohn': {
@@ -522,7 +598,9 @@ function retireInPlace(c: Career, reason: string) {
   const last = c.teamHistory[c.teamHistory.length - 1];
   if (last && last.to === null) last.to = c.year - 1;
   c.retired = buildSummary(c);
-  if (c.retired.hallOfFame) log(c, '명예의 전당에 헌액됐습니다!', 'big');
+  const v = c.retired.hofVote;
+  if (v && v.pct > 0) log(c, v.inducted ? `${v.org} 투표 ${v.pct}% 득표, 첫 해 헌액!` : `${v.org} 투표 ${v.pct}% 득표 (헌액 기준 75%)`, v.inducted ? 'big' : 'info');
+  else if (v) log(c, `${v.org} 후보 자격(1군 10시즌)을 채우지 못했습니다.`, 'info');
   if (c.retired.retiredNumber) log(c, `${c.retired.retiredNumber}에서 등번호 ${c.number}번이 영구결번됐습니다.`, 'big');
 }
 
@@ -538,7 +616,7 @@ export function canRetire(c: Career) {
 
 export function currentLevelLabel(c: Career): string {
   if (c.phase === 'retired') return '은퇴';
-  if (c.military.status === 'serving') return c.military.kind === 'active' ? '현역 복무 중' : '국군체육부대';
+  if (c.military.status === 'serving') return c.military.kind === 'active' ? '현역 복무 중' : '상무 피닉스';
   if (c.level === 'AMA') return '고교 졸업반';
   if (!c.teamId) return '무적';
   return LEAGUES[c.level as Level]?.short ?? c.level;
