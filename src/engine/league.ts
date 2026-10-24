@@ -48,7 +48,15 @@ function gameP(sa: number, sb: number) {
   return clamp(0.5 + 0.035 * (sa - sb), 0.3, 0.7);
 }
 
-function series(a: string, b: string, need: number, s: Record<string, number>, rng: Rng, advA = 0): { winner: string; loser: string; wa: number; wb: number } {
+interface SeriesResult {
+  winner: string;
+  loser: string;
+  wa: number; // 먼저 적은 팀(a)의 승수 (어드밴티지 포함)
+  wb: number;
+  adv: number;
+}
+
+function series(a: string, b: string, need: number, s: Record<string, number>, rng: Rng, advA = 0): SeriesResult {
   let wa = advA;
   let wb = 0;
   const p = gameP(s[a] ?? 0, s[b] ?? 0);
@@ -56,11 +64,12 @@ function series(a: string, b: string, need: number, s: Record<string, number>, r
     if (rng.chance(p)) wa++;
     else wb++;
   }
-  return wa >= need ? { winner: a, loser: b, wa, wb } : { winner: b, loser: a, wa, wb };
+  return wa >= need ? { winner: a, loser: b, wa, wb, adv: advA } : { winner: b, loser: a, wa, wb, adv: advA };
 }
 
-const score = (r: { winner: string; loser: string; wa: number; wb: number }, a: string) =>
-  r.winner === a ? `${r.wa}-${r.wb}` : `${r.wb}-${r.wa}`;
+// "A팀 x-y B팀" 형식. x는 항상 먼저 적은 팀(series의 a)이 실제 경기에서 이긴 수다.
+const score = (r: SeriesResult) => `${r.wa - r.adv}-${r.wb}${r.adv ? ` (어드밴티지 ${r.adv}승 별도)` : ''}`;
+const line = (title: string, a: string, b: string, r: SeriesResult) => `${title}: ${short(a)} ${score(r)} ${short(b)} → ${short(r.winner)} 승리`;
 
 export function simulateLeague(country: Country, strength: Record<string, number>, boost: Record<string, number>, rng: Rng): LeagueResult {
   const s: Record<string, number> = { ...strength };
@@ -84,16 +93,16 @@ export function simulateLeague(country: Country, strength: Record<string, number
     const [t1, t2, t3, t4, t5] = rows.map((r) => r.teamId);
     // 와일드카드: 4위는 1승만 하면 통과, 5위는 2연승 필요
     const wc = series(t4, t5, 2, s, rng, 1);
-    post.push(`와일드카드 결정전: ${short(t4)} ${score(wc, t4)} ${short(t5)}`);
+    post.push(line('와일드카드 결정전', t4, t5, wc));
     out(wc.loser, '와일드카드 결정전 탈락');
     const spo = series(t3, wc.winner, 3, s, rng);
-    post.push(`준플레이오프: ${short(t3)} ${score(spo, t3)} ${short(wc.winner)}`);
+    post.push(line('준플레이오프', t3, wc.winner, spo));
     out(spo.loser, '준플레이오프 탈락');
     const po = series(t2, spo.winner, 3, s, rng);
-    post.push(`플레이오프: ${short(t2)} ${score(po, t2)} ${short(spo.winner)}`);
+    post.push(line('플레이오프', t2, spo.winner, po));
     out(po.loser, '플레이오프 탈락');
     const ks = series(t1, po.winner, 4, s, rng);
-    post.push(`한국시리즈: ${short(t1)} ${score(ks, t1)} ${short(po.winner)} → ${short(ks.winner)} 우승`);
+    post.push(line('한국시리즈', t1, po.winner, ks).replace(/승리$/, '우승'));
     out(ks.loser, '한국시리즈 준우승');
     out(ks.winner, '한국시리즈 우승');
     pennant.add(ks.winner).add(ks.loser);
@@ -112,15 +121,15 @@ export function simulateLeague(country: Country, strength: Record<string, number
       groups.push({ name: SUBLEAGUE_NAME[sub], rows });
       const [a, b, c] = rows.map((r) => r.teamId);
       const first = series(b, c, 2, s, rng);
-      post.push(`${SUBLEAGUE_NAME[sub]} CS 퍼스트 스테이지: ${short(b)} ${score(first, b)} ${short(c)}`);
+      post.push(line(`${SUBLEAGUE_NAME[sub]} CS 퍼스트 스테이지`, b, c, first));
       out(first.loser, '클라이맥스 시리즈 퍼스트 스테이지 탈락');
       const fin = series(a, first.winner, 4, s, rng, 1);
-      post.push(`${SUBLEAGUE_NAME[sub]} CS 파이널 스테이지: ${short(a)} ${score(fin, a)} ${short(first.winner)} (1위 1승 어드밴티지 포함)`);
+      post.push(line(`${SUBLEAGUE_NAME[sub]} CS 파이널 스테이지`, a, first.winner, fin));
       out(fin.loser, '클라이맥스 시리즈 파이널 스테이지 탈락');
       champs.push(fin.winner);
     }
     const js = series(champs[0], champs[1], 4, s, rng);
-    post.push(`일본시리즈: ${short(champs[0])} ${score(js, champs[0])} ${short(champs[1])} → ${short(js.winner)} 우승`);
+    post.push(line('일본시리즈', champs[0], champs[1], js).replace(/승리$/, '우승'));
     out(js.loser, '일본시리즈 준우승');
     out(js.winner, '일본시리즈 우승');
     pennant.add(js.winner).add(js.loser);
@@ -149,22 +158,24 @@ export function simulateLeague(country: Country, strength: Record<string, number
     const lg = sub;
     const w36 = series(id[2], id[5], 2, s, rng);
     const w45 = series(id[3], id[4], 2, s, rng);
-    post.push(`${lg} 와일드카드 시리즈: ${short(id[2])} ${score(w36, id[2])} ${short(id[5])} / ${short(id[3])} ${score(w45, id[3])} ${short(id[4])}`);
+    post.push(line(`${lg} 와일드카드 시리즈`, id[2], id[5], w36));
+    post.push(line(`${lg} 와일드카드 시리즈`, id[3], id[4], w45));
     out(w36.loser, '와일드카드 시리즈 탈락');
     out(w45.loser, '와일드카드 시리즈 탈락');
     const ds1 = series(id[0], w45.winner, 3, s, rng);
     const ds2 = series(id[1], w36.winner, 3, s, rng);
-    post.push(`${lg} 디비전 시리즈: ${short(id[0])} ${score(ds1, id[0])} ${short(w45.winner)} / ${short(id[1])} ${score(ds2, id[1])} ${short(w36.winner)}`);
+    post.push(line(`${lg} 디비전 시리즈`, id[0], w45.winner, ds1));
+    post.push(line(`${lg} 디비전 시리즈`, id[1], w36.winner, ds2));
     out(ds1.loser, '디비전 시리즈 탈락');
     out(ds2.loser, '디비전 시리즈 탈락');
     const cs = series(ds1.winner, ds2.winner, 4, s, rng);
-    post.push(`${lg} 챔피언십 시리즈: ${short(ds1.winner)} ${score(cs, ds1.winner)} ${short(ds2.winner)}`);
+    post.push(line(`${lg} 챔피언십 시리즈`, ds1.winner, ds2.winner, cs));
     out(cs.loser, '챔피언십 시리즈 탈락');
     pennants.push(cs.winner);
     pennant.add(cs.winner);
   }
   const ws = series(pennants[0], pennants[1], 4, s, rng);
-  post.push(`월드시리즈: ${short(pennants[0])} ${score(ws, pennants[0])} ${short(pennants[1])} → ${short(ws.winner)} 우승`);
+  post.push(line('월드시리즈', pennants[0], pennants[1], ws).replace(/승리$/, '우승'));
   out(ws.loser, '월드시리즈 준우승');
   out(ws.winner, '월드시리즈 우승');
   return { groups, post, champion: ws.winner, summary, pennant, rank };

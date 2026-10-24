@@ -189,3 +189,22 @@ describe('real leagues', () => {
     void rng;
   });
 });
+
+describe('postseason display', () => {
+  it('series score always matches the winner', async () => {
+    const { simulateLeague } = await import('./league');
+    for (let seed = 1; seed < 200; seed++) {
+      for (const country of ['KR', 'JP', 'US'] as const) {
+        const res = simulateLeague(country, {}, {}, new Rng(seed));
+        for (const p of res.post) {
+          const m = p.match(/: (.+?) (\d+)-(\d+)(?: \(어드밴티지 (\d)승 별도\))? (.+?) → (.+?) (승리|우승)$/);
+          expect(m, p).not.toBeNull();
+          const [, a, x, y, adv, b, w] = m!;
+          const winsA = Number(x) + Number(adv ?? 0);
+          const winsB = Number(y);
+          expect(w, p).toBe(winsA > winsB ? a : b);
+        }
+      }
+    }
+  });
+});
